@@ -49,7 +49,7 @@ func (o *OpenCode) ListSessions(ctx context.Context) ([]Session, error) {
 		return nil, nil
 	}
 
-	dsn := fmt.Sprintf("file:%s?mode=ro&_pragma=journal_mode(WAL)&_pragma=busy_timeout(3000)", o.dbPath)
+	dsn := fmt.Sprintf("file:%s?mode=ro&_pragma=busy_timeout(3000)", o.dbPath)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open opencode db: %w", err)
@@ -144,7 +144,7 @@ func (o *OpenCode) SessionText(ctx context.Context, sessionID string) string {
 	if _, err := os.Stat(o.dbPath); os.IsNotExist(err) {
 		return ""
 	}
-	dsn := fmt.Sprintf("file:%s?mode=ro&_pragma=journal_mode(WAL)&_pragma=busy_timeout(3000)", o.dbPath)
+	dsn := fmt.Sprintf("file:%s?mode=ro&_pragma=busy_timeout(3000)", o.dbPath)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return ""
