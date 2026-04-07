@@ -168,6 +168,9 @@ func main() {
 		case "ask":
 			runAsk(os.Args[2:])
 			return
+		case "init":
+			runInit(os.Args[2:])
+			return
 		}
 	}
 
@@ -177,6 +180,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Usage: sesh [options] [query]\n\n")
 		fmt.Fprintf(os.Stderr, "A unified session browser for coding agents.\n\n")
 		fmt.Fprintf(os.Stderr, "Commands:\n")
+		fmt.Fprintf(os.Stderr, "  init     Output shell wrapper for your shell\n")
 		fmt.Fprintf(os.Stderr, "  index    Generate summaries for all sessions\n")
 		fmt.Fprintf(os.Stderr, "  recap    Summarize what you worked on over a time period\n")
 		fmt.Fprintf(os.Stderr, "  ask      Ask a natural language question about your sessions\n\n")
@@ -617,6 +621,91 @@ func runAsk(args []string) {
 
 	fmt.Println(result)
 }
+
+// runInit handles the `sesh init` subcommand.
+func runInit(args []string) {
+	fs := flag.NewFlagSet("init", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: sesh init <shell>\n\n")
+		fmt.Fprintf(os.Stderr, "Output the shell wrapper function for sesh.\n\n")
+		fmt.Fprintf(os.Stderr, "Supported shells: bash, zsh, fish, powershell\n\n")
+		fmt.Fprintf(os.Stderr, "Add to your shell's rc file:\n")
+		fmt.Fprintf(os.Stderr, "  bash:       eval \"$(sesh init bash)\"\n")
+		fmt.Fprintf(os.Stderr, "  zsh:        eval \"$(sesh init zsh)\"\n")
+		fmt.Fprintf(os.Stderr, "  fish:       sesh init fish | source\n")
+		fmt.Fprintf(os.Stderr, "  powershell: sesh init powershell | Invoke-Expression\n\n")
+		fmt.Fprintf(os.Stderr, "Or append to your rc file directly:\n")
+		fmt.Fprintf(os.Stderr, "  sesh init bash >> ~/.bashrc\n")
+		fmt.Fprintf(os.Stderr, "  sesh init zsh >> ~/.zshrc\n")
+		fmt.Fprintf(os.Stderr, "  sesh init fish >> ~/.config/fish/config.fish\n")
+		fmt.Fprintf(os.Stderr, "  sesh init powershell >> $PROFILE\n")
+	}
+	fs.Parse(args)
+
+	shell := fs.Arg(0)
+	if shell == "" {
+		// Try to detect from $SHELL.
+		shell = detectShell()
+	}
+	if shell == "" {
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	switch strings.ToLower(shell) {
+	case "bash":
+		fmt.Println(initBash)
+	case "zsh":
+		fmt.Println(initZsh)
+	case "fish":
+		fmt.Println(initFish)
+	case "powershell", "pwsh":
+		fmt.Println(initPowerShell)
+	default:
+		fmt.Fprintf(os.Stderr, "sesh: unsupported shell %q\n", shell)
+		fmt.Fprintf(os.Stderr, "sesh: supported shells: bash, zsh, fish, powershell\n")
+		os.Exit(1)
+	}
+}
+
+func detectShell() string {
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		return ""
+	}
+	base := filepath.Base(shell)
+	switch base {
+	case "bash", "zsh", "fish":
+		return base
+	default:
+		return ""
+	}
+}
+
+const initBash = `sesh() {
+  local cmd
+  cmd=$(command sesh "$@") || return $?
+  eval "$cmd"
+}`
+
+const initZsh = `sesh() {
+  local cmd
+  cmd=$(command sesh "$@") || return $?
+  eval "$cmd"
+}`
+
+const initFish = `function sesh
+    set -l cmd (command sesh $argv)
+    or return $status
+    eval $cmd
+end`
+
+const initPowerShell = `function sesh {
+    $output = & sesh.exe @args
+    if ($LASTEXITCODE -eq 0 -and $output) {
+        Invoke-Expression $output
+    }
+}`
 
 // parseTimeRange interprets the --since, --until, and --days flags.
 func parseTimeRange(since, until string, days int) (time.Time, time.Time) {

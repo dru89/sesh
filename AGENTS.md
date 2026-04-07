@@ -14,10 +14,24 @@ sesh is a CLI tool that aggregates sessions from multiple coding agents into a s
 go install github.com/dru89/sesh/cmd/sesh@latest
 ```
 
-Add the shell wrapper to the user's shell rc file (`.bashrc`, `.zshrc`, etc.):
+Or download a prebuilt binary from [GitHub Releases](https://github.com/dru89/sesh/releases).
+
+Set up the shell wrapper by adding this to the user's shell rc file:
 
 ```bash
-sesh() { local cmd; cmd=$(command sesh "$@") || return $?; eval "$cmd"; }
+# bash: add to ~/.bashrc
+eval "$(sesh init bash)"
+
+# zsh: add to ~/.zshrc
+eval "$(sesh init zsh)"
+
+# fish: add to ~/.config/fish/config.fish
+sesh init fish | source
+```
+
+```powershell
+# PowerShell: add to $PROFILE
+sesh init powershell | Invoke-Expression
 ```
 
 ## Configuration file

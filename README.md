@@ -22,24 +22,25 @@ go build -o ~/go/bin/sesh ./cmd/sesh/
 
 ### Shell wrapper
 
-sesh outputs a shell command (cd + resume) that needs to run in your current shell.
-
-**bash/zsh** — add to `.bashrc` or `.zshrc`:
+sesh outputs a shell command (cd + resume) that needs to run in your current shell. The easiest way to set this up:
 
 ```bash
-sesh() { local cmd; cmd=$(command sesh "$@") || return $?; eval "$cmd"; }
-```
+# bash
+echo 'eval "$(sesh init bash)"' >> ~/.bashrc
 
-**PowerShell** — add to your `$PROFILE`:
+# zsh
+echo 'eval "$(sesh init zsh)"' >> ~/.zshrc
+
+# fish
+echo 'sesh init fish | source' >> ~/.config/fish/config.fish
+```
 
 ```powershell
-function sesh {
-    $output = & sesh.exe @args
-    if ($LASTEXITCODE -eq 0 -and $output) { Invoke-Expression $output }
-}
+# PowerShell
+echo 'sesh init powershell | Invoke-Expression' >> $PROFILE
 ```
 
-Pre-made files are in `shell/sesh.bash`, `shell/sesh.zsh`, and `shell/sesh.ps1`.
+Or source the pre-made wrapper files in `shell/` directly. Run `sesh init --help` to see all options.
 
 ## Usage
 
