@@ -171,6 +171,9 @@ func main() {
 		case "init":
 			runInit(os.Args[2:])
 			return
+		case "list":
+			runList(os.Args[2:])
+			return
 		}
 	}
 
@@ -181,6 +184,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "A unified session browser for coding agents.\n\n")
 		fmt.Fprintf(os.Stderr, "Commands:\n")
 		fmt.Fprintf(os.Stderr, "  init     Output shell wrapper for your shell\n")
+		fmt.Fprintf(os.Stderr, "  list     List sessions (non-interactive)\n")
 		fmt.Fprintf(os.Stderr, "  index    Generate summaries for all sessions\n")
 		fmt.Fprintf(os.Stderr, "  recap    Summarize what you worked on over a time period\n")
 		fmt.Fprintf(os.Stderr, "  ask      Ask a natural language question about your sessions\n\n")
@@ -620,6 +624,119 @@ func runAsk(args []string) {
 	}
 
 	fmt.Println(result)
+}
+
+// runList handles the `sesh list` subcommand.
+func runList(args []string) {
+	fs := flag.NewFlagSet("list", flag.ExitOnError)
+	agentFilter := fs.String("agent", "", "Filter by agent name")
+	since := fs.String("since", "", "Only show sessions since date (e.g. 'monday', '2026-04-01', '3d')")
+	limit := fs.Int("n", 0, "Maximum number of sessions to show")
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: sesh list [options]\n\n")
+		fmt.Fprintf(os.Stderr, "List sessions in a non-interactive table format.\n\n")
+		fmt.Fprintf(os.Stderr, "Examples:\n")
+		fmt.Fprintf(os.Stderr, "  sesh list                    # all sessions\n")
+		fmt.Fprintf(os.Stderr, "  sesh list --agent opencode   # only OpenCode\n")
+		fmt.Fprintf(os.Stderr, "  sesh list --since monday     # since Monday\n")
+		fmt.Fprintf(os.Stderr, "  sesh list -n 20              # last 20 sessions\n\n")
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		fs.PrintDefaults()
+	}
+	fs.Parse(args)
+
+	cfg := loadConfig()
+	providers := buildProviders(cfg)
+	cache := summary.NewCache()
+	ctx := context.Background()
+
+	all := collectSessions(ctx, providers, *agentFilter)
+	applySummaries(all, cache)
+
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].LastUsed.After(all[j].LastUsed)
+	})
+
+	// Apply time filter.
+	if *since != "" {
+		cutoff := parseDateish(*since, time.Now())
+		filtered := all[:0]
+		for _, s := range all {
+			if s.LastUsed.After(cutoff) || s.LastUsed.Equal(cutoff) {
+				filtered = append(filtered, s)
+			}
+		}
+		all = filtered
+	}
+
+	// Apply limit.
+	if *limit > 0 && *limit < len(all) {
+		all = all[:*limit]
+	}
+
+	if len(all) == 0 {
+		fmt.Fprintf(os.Stderr, "No sessions found.\n")
+		return
+	}
+
+	// Detect if stdout is a terminal for color output.
+	isTTY := isTerminal()
+
+	// Find the longest agent name for padding.
+	maxAgent := 0
+	for _, s := range all {
+		if len(s.Agent) > maxAgent {
+			maxAgent = len(s.Agent)
+		}
+	}
+	if maxAgent < 6 {
+		maxAgent = 6
+	}
+
+	for _, s := range all {
+		title := s.DisplayTitle()
+		if len(title) > 60 {
+			title = title[:59] + "…"
+		}
+
+		when := provider.RelativeTime(s.LastUsed)
+		sid := s.ID
+		if len(sid) > 12 {
+			sid = sid[:12] + "…"
+		}
+
+		if isTTY {
+			agentStr := colorAgent(s.Agent)
+			// Pad after the color codes based on raw agent name length.
+			pad := maxAgent - len(s.Agent) + 2
+			fmt.Printf("%s%s%-60s  %-8s  %s\n",
+				agentStr, strings.Repeat(" ", pad), title, when, sid)
+		} else {
+			fmt.Printf("%-*s  %-60s  %-8s  %s\n",
+				maxAgent, s.Agent, title, when, sid)
+		}
+	}
+}
+
+// colorAgent returns an ANSI-colored agent name for terminal output.
+func colorAgent(name string) string {
+	switch name {
+	case "opencode":
+		return "\033[34m" + name + "\033[0m" // blue
+	case "claude":
+		return "\033[35m" + name + "\033[0m" // magenta
+	default:
+		return "\033[33m" + name + "\033[0m" // yellow
+	}
+}
+
+// isTerminal checks if stdout is a terminal.
+func isTerminal() bool {
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
 }
 
 // runInit handles the `sesh init` subcommand.
