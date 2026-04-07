@@ -10,6 +10,7 @@ export function getSeshPath(): string {
 function seshEnv(): NodeJS.ProcessEnv {
   return {
     ...process.env,
+    SESH_DEBUG: "1",
     PATH: [
       process.env.PATH,
       "/usr/local/bin",
@@ -52,10 +53,12 @@ export async function aiSearchSessions(query: string): Promise<SeshSession[]> {
   });
 
   return new Promise((resolve) => {
+    const cmd = `${sesh} --json --ai-search ${shellQuote(query)}`;
     exec(
-      `${sesh} --json --ai-search ${shellQuote(query)}`,
+      cmd,
       {
         timeout: 30000,
+        maxBuffer: 10 * 1024 * 1024, // 10MB — session list can be large
         encoding: "utf-8",
         shell: "/bin/bash",
         env: seshEnv(),
@@ -66,17 +69,20 @@ export async function aiSearchSessions(query: string): Promise<SeshSession[]> {
           showToast({
             style: Toast.Style.Failure,
             title: "AI search failed",
-            message: msg,
+            message: msg.slice(0, 200),
           });
           resolve([]);
           return;
         }
         try {
-          const results: SeshSession[] = JSON.parse(stdout) ?? [];
+          const parsed = JSON.parse(stdout);
+          const results: SeshSession[] = Array.isArray(parsed) ? parsed : [];
           if (results.length === 0) {
+            const hint = stderr?.trim();
             showToast({
               style: Toast.Style.Failure,
               title: "No relevant sessions found",
+              message: hint ? hint.slice(0, 200) : undefined,
             });
           } else {
             showToast({
@@ -85,12 +91,14 @@ export async function aiSearchSessions(query: string): Promise<SeshSession[]> {
             });
           }
           resolve(results);
-        } catch {
+        } catch (parseErr) {
           showToast({
             style: Toast.Style.Failure,
             title: "Failed to parse AI search results",
+            message: `stdout length: ${stdout?.length ?? 0}, first 100 chars: ${(stdout ?? "").slice(0, 100)}`,
           });
           resolve([]);
+        }
         }
       }
     );
