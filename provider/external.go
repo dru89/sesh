@@ -14,6 +14,7 @@ type ExternalConfig struct {
 	Name          string   `json:"name"`
 	ListCommand   []string `json:"list_command"`
 	ResumeCommand string   `json:"resume_command"` // template: {{ID}}, {{DIR}}
+	Env           []string `json:"-"`              // merged env for list_command; nil inherits parent
 }
 
 // ExternalSession is the JSON schema external providers must emit from their list command.
@@ -45,6 +46,7 @@ func (e *External) ListSessions(ctx context.Context) ([]Session, error) {
 	}
 
 	cmd := exec.CommandContext(ctx, e.config.ListCommand[0], e.config.ListCommand[1:]...)
+	cmd.Env = e.config.Env // nil inherits parent env
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("run list command for %q: %w", e.config.Name, err)

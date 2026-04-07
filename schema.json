@@ -10,6 +10,10 @@
       "type": "string",
       "description": "JSON Schema reference (ignored by sesh)"
     },
+    "env": {
+      "$ref": "#/$defs/env",
+      "description": "Environment variables applied to all commands. Per-command env overrides these."
+    },
     "index": {
       "$ref": "#/$defs/commandConfig",
       "description": "LLM command for title generation (sesh index). Also used as fallback for other subcommands."
@@ -27,9 +31,17 @@
           "type": "string",
           "description": "Custom prompt for answer generation."
         },
+        "env": {
+          "$ref": "#/$defs/env",
+          "description": "Environment variables for the ask command. Overrides top-level env."
+        },
         "filter_command": {
           "$ref": "#/$defs/command",
           "description": "Command for session filtering (pass 1). Fallback: ask.filter_command -> index -> ask -> recap. Use a fast model here."
+        },
+        "filter_env": {
+          "$ref": "#/$defs/env",
+          "description": "Environment variables for the filter command. Overrides top-level env."
         }
       }
     },
@@ -46,6 +58,14 @@
     }
   },
   "$defs": {
+    "env": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Environment variables as key-value pairs.",
+      "examples": [
+        { "AWS_PROFILE": "my-profile", "AWS_DEFAULT_REGION": "us-east-1" }
+      ]
+    },
     "command": {
       "type": "array",
       "items": { "type": "string" },
@@ -67,6 +87,10 @@
         "prompt": {
           "type": "string",
           "description": "Custom prompt to override the default."
+        },
+        "env": {
+          "$ref": "#/$defs/env",
+          "description": "Environment variables for this command. Overrides top-level env."
         }
       }
     },
@@ -99,6 +123,10 @@
         "list_command": {
           "$ref": "#/$defs/command",
           "description": "Command to list sessions (external providers only). Must output a JSON array to stdout."
+        },
+        "env": {
+          "$ref": "#/$defs/env",
+          "description": "Environment variables for list_command. Overrides top-level env."
         }
       }
     }

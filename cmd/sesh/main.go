@@ -25,6 +25,7 @@ var version = "dev"
 // config is the user configuration loaded from ~/.config/sesh/config.json.
 type config struct {
 	Schema    string                    `json:"$schema,omitempty"` // JSON Schema ref, ignored by sesh
+	Env       map[string]string         `json:"env,omitempty"`     // top-level env applied to all commands
 	Providers map[string]providerConfig `json:"providers"`
 	Index     commandConfig             `json:"index"`
 	Ask       askConfig                 `json:"ask"`
@@ -33,49 +34,77 @@ type config struct {
 
 // commandConfig holds a command + prompt pair for a subcommand.
 type commandConfig struct {
-	Command []string `json:"command,omitempty"`
-	Prompt  string   `json:"prompt,omitempty"`
+	Command []string          `json:"command,omitempty"`
+	Prompt  string            `json:"prompt,omitempty"`
+	Env     map[string]string `json:"env,omitempty"` // per-command env overrides top-level
 }
 
 // askConfig extends commandConfig with a separate filter command.
 type askConfig struct {
-	Command       []string `json:"command,omitempty"`
-	Prompt        string   `json:"prompt,omitempty"`
-	FilterCommand []string `json:"filter_command,omitempty"`
+	Command       []string          `json:"command,omitempty"`
+	Prompt        string            `json:"prompt,omitempty"`
+	Env           map[string]string `json:"env,omitempty"` // env for ask.command
+	FilterCommand []string          `json:"filter_command,omitempty"`
+	FilterEnv     map[string]string `json:"filter_env,omitempty"` // env for ask.filter_command
 }
 
-// resolveCommand walks a fallback chain and returns the first non-empty command.
-func resolveCommand(candidates ...[]string) []string {
-	for _, cmd := range candidates {
-		if len(cmd) > 0 {
-			return cmd
+// commandWithEnv pairs a command with its per-slot environment overrides.
+type commandWithEnv struct {
+	command []string
+	env     map[string]string
+}
+
+// resolveCommand walks a fallback chain and returns the first non-empty command
+// along with its associated env.
+func resolveCommand(candidates ...commandWithEnv) ([]string, map[string]string) {
+	for _, c := range candidates {
+		if len(c.command) > 0 {
+			return c.command, c.env
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 // indexCommand returns the resolved command for title generation (sesh index).
 // Fallback: index -> recap -> ask -> ask.filter_command
-func (c config) indexCommand() []string {
-	return resolveCommand(c.Index.Command, c.Recap.Command, c.Ask.Command, c.Ask.FilterCommand)
+func (c config) indexCommand() ([]string, map[string]string) {
+	return resolveCommand(
+		commandWithEnv{c.Index.Command, c.Index.Env},
+		commandWithEnv{c.Recap.Command, c.Recap.Env},
+		commandWithEnv{c.Ask.Command, c.Ask.Env},
+		commandWithEnv{c.Ask.FilterCommand, c.Ask.FilterEnv},
+	)
 }
 
 // askCommand returns the resolved command for prose generation (sesh ask pass 2).
 // Fallback: ask -> recap -> index
-func (c config) askCommand() []string {
-	return resolveCommand(c.Ask.Command, c.Recap.Command, c.Index.Command)
+func (c config) askCommand() ([]string, map[string]string) {
+	return resolveCommand(
+		commandWithEnv{c.Ask.Command, c.Ask.Env},
+		commandWithEnv{c.Recap.Command, c.Recap.Env},
+		commandWithEnv{c.Index.Command, c.Index.Env},
+	)
 }
 
 // askFilterCommand returns the resolved command for session filtering (sesh ask pass 1, AI fallback).
 // Fallback: ask.filter_command -> index -> ask -> recap
-func (c config) askFilterCommand() []string {
-	return resolveCommand(c.Ask.FilterCommand, c.Index.Command, c.Ask.Command, c.Recap.Command)
+func (c config) askFilterCommand() ([]string, map[string]string) {
+	return resolveCommand(
+		commandWithEnv{c.Ask.FilterCommand, c.Ask.FilterEnv},
+		commandWithEnv{c.Index.Command, c.Index.Env},
+		commandWithEnv{c.Ask.Command, c.Ask.Env},
+		commandWithEnv{c.Recap.Command, c.Recap.Env},
+	)
 }
 
 // recapCommand returns the resolved command for recap prose generation.
 // Fallback: recap -> ask -> index
-func (c config) recapCommand() []string {
-	return resolveCommand(c.Recap.Command, c.Ask.Command, c.Index.Command)
+func (c config) recapCommand() ([]string, map[string]string) {
+	return resolveCommand(
+		commandWithEnv{c.Recap.Command, c.Recap.Env},
+		commandWithEnv{c.Ask.Command, c.Ask.Env},
+		commandWithEnv{c.Index.Command, c.Index.Env},
+	)
 }
 
 // indexPrompt returns the prompt for title generation.
@@ -86,16 +115,55 @@ func (c config) indexPrompt() string {
 	return ""
 }
 
+// buildEnv merges the top-level env with per-command env overrides and returns
+// a slice suitable for exec.Cmd.Env. Returns nil if no env overrides are
+// configured, which causes exec.Cmd to inherit the parent process environment.
+// Merge order: process env < top-level env < per-command env.
+func (c config) buildEnv(commandEnv map[string]string) []string {
+	if len(c.Env) == 0 && len(commandEnv) == 0 {
+		return nil
+	}
+
+	// Merge top-level and command-level (command wins).
+	merged := make(map[string]string, len(c.Env)+len(commandEnv))
+	for k, v := range c.Env {
+		merged[k] = v
+	}
+	for k, v := range commandEnv {
+		merged[k] = v
+	}
+
+	// Start from the parent process env, remove keys we're overriding,
+	// then append the merged overrides.
+	base := os.Environ()
+	n := 0
+	for _, e := range base {
+		k, _, _ := strings.Cut(e, "=")
+		if _, override := merged[k]; !override {
+			base[n] = e
+			n++
+		}
+	}
+	base = base[:n]
+	for k, v := range merged {
+		base = append(base, k+"="+v)
+	}
+	return base
+}
+
 // hasAnyCommand returns true if any LLM command is configured.
 func (c config) hasAnyCommand() bool {
-	return len(c.indexCommand()) > 0
+	cmd, _ := c.indexCommand()
+	return len(cmd) > 0
 }
 
 // summaryConfig builds a summary.Config from the resolved index command/prompt.
 func (c config) summaryConfig() summary.Config {
+	cmd, env := c.indexCommand()
 	return summary.Config{
-		Command: c.indexCommand(),
+		Command: cmd,
 		Prompt:  c.indexPrompt(),
+		Env:     c.buildEnv(env),
 	}
 }
 
@@ -112,6 +180,10 @@ type providerConfig struct {
 	// ListCommand is the command to run to list sessions (external providers only).
 	// Array of executable + arguments.
 	ListCommand []string `json:"list_command,omitempty"`
+
+	// Env sets environment variables for list_command execution.
+	// Overrides top-level env for this provider.
+	Env map[string]string `json:"env,omitempty"`
 }
 
 // resumeCommandStr parses resume_command from either string or array form.
@@ -241,12 +313,12 @@ func main() {
 
 		// AI search: filter through LLM if query provided.
 		if *aiSearch != "" {
-			filterCmd := cfg.askFilterCommand()
+			filterCmd, filterCmdEnv := cfg.askFilterCommand()
 			if len(filterCmd) == 0 {
 				fmt.Fprintf(os.Stderr, "sesh: --ai-search requires an LLM command to be configured\n")
 				os.Exit(1)
 			}
-			sessions = aiFilterSessions(ctx, filterCmd, *aiSearch, sessions)
+			sessions = aiFilterSessions(ctx, filterCmd, cfg.buildEnv(filterCmdEnv), *aiSearch, sessions)
 		}
 
 		pMap := providersByName(providers)
@@ -304,8 +376,8 @@ func main() {
 			return ""
 		},
 	}
-	if filterCmd := cfg.askFilterCommand(); len(filterCmd) > 0 {
-		pickOpts.FallbackSearch = buildFallbackSearch(filterCmd)
+	if filterCmd, filterCmdEnv := cfg.askFilterCommand(); len(filterCmd) > 0 {
+		pickOpts.FallbackSearch = buildFallbackSearch(filterCmd, cfg.buildEnv(filterCmdEnv))
 	}
 
 	result, err := tui.Pick(all, pickOpts)
@@ -483,7 +555,7 @@ func runRecap(args []string) {
 	fs.Parse(args)
 
 	cfg := loadConfig()
-	recapCmd := cfg.recapCommand()
+	recapCmd, recapCmdEnv := cfg.recapCommand()
 	if len(recapCmd) == 0 {
 		fmt.Fprintf(os.Stderr, "sesh: no LLM command configured for recap\n")
 		os.Exit(1)
@@ -539,7 +611,7 @@ func runRecap(args []string) {
 			"Use plain text, no markdown formatting.\n\n%s",
 		start.Format("Mon Jan 2"), end.Format("Mon Jan 2"), recapInput.String())
 
-	result, err := summary.RunLLM(ctx, recapCmd, prompt, 60*time.Second)
+	result, err := summary.RunLLM(ctx, recapCmd, cfg.buildEnv(recapCmdEnv), prompt, 60*time.Second)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "sesh: recap failed: %v\n", err)
 		os.Exit(1)
@@ -572,8 +644,8 @@ func runAsk(args []string) {
 	}
 
 	cfg := loadConfig()
-	askCmd := cfg.askCommand()
-	filterCmd := cfg.askFilterCommand()
+	askCmd, askCmdEnv := cfg.askCommand()
+	filterCmd, filterCmdEnv := cfg.askFilterCommand()
 	if len(askCmd) == 0 && len(filterCmd) == 0 {
 		fmt.Fprintf(os.Stderr, "sesh: no LLM command configured for ask\n")
 		os.Exit(1)
@@ -581,10 +653,14 @@ func runAsk(args []string) {
 	// If only one is available, use it for both.
 	if len(filterCmd) == 0 {
 		filterCmd = askCmd
+		filterCmdEnv = askCmdEnv
 	}
 	if len(askCmd) == 0 {
 		askCmd = filterCmd
+		askCmdEnv = filterCmdEnv
 	}
+	filterEnv := cfg.buildEnv(filterCmdEnv)
+	askEnv := cfg.buildEnv(askCmdEnv)
 
 	providers := buildProviders(cfg)
 	cache := summary.NewCache()
@@ -627,7 +703,7 @@ func runAsk(args []string) {
 
 	fmt.Fprintf(os.Stderr, "Searching %d sessions...\n", len(all))
 
-	filterResult, err := summary.RunLLM(ctx, filterCmd, filterPrompt, 30*time.Second)
+	filterResult, err := summary.RunLLM(ctx, filterCmd, filterEnv, filterPrompt, 30*time.Second)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "sesh: ask failed during filtering: %v\n", err)
 		os.Exit(1)
@@ -675,7 +751,7 @@ func runAsk(args []string) {
 			"Use plain text, no markdown formatting.",
 		detailList.String(), question)
 
-	result, err := summary.RunLLM(ctx, askCmd, answerPrompt, 60*time.Second)
+	result, err := summary.RunLLM(ctx, askCmd, askEnv, answerPrompt, 60*time.Second)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "sesh: ask failed during answer generation: %v\n", err)
 		os.Exit(1)
@@ -1266,6 +1342,7 @@ func buildProviders(cfg config) []provider.Provider {
 			Name:          name,
 			ListCommand:   pc.ListCommand,
 			ResumeCommand: pc.resumeCommandStr(),
+			Env:           cfg.buildEnv(pc.Env),
 		}))
 	}
 
@@ -1356,16 +1433,16 @@ func computeStats(sessions []provider.Session) sessionStats {
 
 // buildFallbackSearch returns a function that uses the configured LLM to
 // semantically search sessions when fuzzy search returns no results.
-func buildFallbackSearch(command []string) tui.FallbackSearchFunc {
+func buildFallbackSearch(command []string, env []string) tui.FallbackSearchFunc {
 	return func(ctx context.Context, query string, sessions []provider.Session) []provider.Session {
-		return aiFilterSessions(ctx, command, query, sessions)
+		return aiFilterSessions(ctx, command, env, query, sessions)
 	}
 }
 
 // aiFilterSessions sends a query + numbered session list to the LLM and returns
 // the sessions it identifies as relevant. Used by --ai-search, TUI fallback,
 // and the ask subcommand's pass 1.
-func aiFilterSessions(ctx context.Context, command []string, query string, sessions []provider.Session) []provider.Session {
+func aiFilterSessions(ctx context.Context, command []string, env []string, query string, sessions []provider.Session) []provider.Session {
 	var input strings.Builder
 	input.WriteString(fmt.Sprintf(
 		"I'm searching my coding agent sessions for: %q\n\n"+
@@ -1381,7 +1458,7 @@ func aiFilterSessions(ctx context.Context, command []string, query string, sessi
 		input.WriteString(fmt.Sprintf("%d. [%s] %s | %s\n", i+1, s.Agent, title, s.Directory))
 	}
 
-	result, err := summary.RunLLM(ctx, command, input.String(), 30*time.Second)
+	result, err := summary.RunLLM(ctx, command, env, input.String(), 30*time.Second)
 	if err != nil {
 		return nil
 	}

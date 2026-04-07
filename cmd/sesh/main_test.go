@@ -11,35 +11,33 @@ import (
 	"time"
 
 	"github.com/dru89/sesh/provider"
+	"github.com/dru89/sesh/summary"
 )
 
 func TestResolveCommand(t *testing.T) {
 	haiku := []string{"llm", "-m", "haiku"}
 	sonnet := []string{"llm", "-m", "sonnet"}
+	haikuEnv := map[string]string{"MODEL": "haiku"}
+	sonnetEnv := map[string]string{"MODEL": "sonnet"}
 
 	tests := []struct {
-		name       string
-		candidates [][]string
-		want       []string
+		name    string
+		pairs   []commandWithEnv
+		wantCmd []string
+		wantEnv map[string]string
 	}{
-		{"first set", [][]string{haiku, sonnet}, haiku},
-		{"skip empty", [][]string{nil, sonnet}, sonnet},
-		{"all empty", [][]string{nil, nil}, nil},
-		{"single", [][]string{haiku}, haiku},
-		{"empty slice", [][]string{[]string{}, sonnet}, sonnet},
+		{"first set", []commandWithEnv{{haiku, haikuEnv}, {sonnet, sonnetEnv}}, haiku, haikuEnv},
+		{"skip empty", []commandWithEnv{{nil, nil}, {sonnet, sonnetEnv}}, sonnet, sonnetEnv},
+		{"all empty", []commandWithEnv{{nil, nil}, {nil, nil}}, nil, nil},
+		{"single", []commandWithEnv{{haiku, haikuEnv}}, haiku, haikuEnv},
+		{"empty slice", []commandWithEnv{{[]string{}, nil}, {sonnet, sonnetEnv}}, sonnet, sonnetEnv},
+		{"env follows command", []commandWithEnv{{nil, haikuEnv}, {sonnet, sonnetEnv}}, sonnet, sonnetEnv},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := resolveCommand(tt.candidates...)
-			if len(got) != len(tt.want) {
-				t.Errorf("resolveCommand() = %v, want %v", got, tt.want)
-				return
-			}
-			for i := range got {
-				if got[i] != tt.want[i] {
-					t.Errorf("resolveCommand()[%d] = %q, want %q", i, got[i], tt.want[i])
-				}
-			}
+			gotCmd, gotEnv := resolveCommand(tt.pairs...)
+			assertCmd(t, "command", gotCmd, tt.wantCmd)
+			assertEnvMap(t, "env", gotEnv, tt.wantEnv)
 		})
 	}
 }
@@ -53,10 +51,14 @@ func TestFallbackChains(t *testing.T) {
 		cfg := config{
 			Index: commandConfig{Command: haiku},
 		}
-		assertCmd(t, "indexCommand", cfg.indexCommand(), haiku)
-		assertCmd(t, "askCommand", cfg.askCommand(), haiku)
-		assertCmd(t, "askFilterCommand", cfg.askFilterCommand(), haiku)
-		assertCmd(t, "recapCommand", cfg.recapCommand(), haiku)
+		cmd, _ := cfg.indexCommand()
+		assertCmd(t, "indexCommand", cmd, haiku)
+		cmd, _ = cfg.askCommand()
+		assertCmd(t, "askCommand", cmd, haiku)
+		cmd, _ = cfg.askFilterCommand()
+		assertCmd(t, "askFilterCommand", cmd, haiku)
+		cmd, _ = cfg.recapCommand()
+		assertCmd(t, "recapCommand", cmd, haiku)
 	})
 
 	t.Run("split fast and heavy", func(t *testing.T) {
@@ -65,10 +67,14 @@ func TestFallbackChains(t *testing.T) {
 			Ask:   askConfig{Command: sonnet},
 			Recap: commandConfig{Command: sonnet},
 		}
-		assertCmd(t, "indexCommand", cfg.indexCommand(), haiku)
-		assertCmd(t, "askCommand", cfg.askCommand(), sonnet)
-		assertCmd(t, "askFilterCommand", cfg.askFilterCommand(), haiku) // falls back to index
-		assertCmd(t, "recapCommand", cfg.recapCommand(), sonnet)
+		cmd, _ := cfg.indexCommand()
+		assertCmd(t, "indexCommand", cmd, haiku)
+		cmd, _ = cfg.askCommand()
+		assertCmd(t, "askCommand", cmd, sonnet)
+		cmd, _ = cfg.askFilterCommand()
+		assertCmd(t, "askFilterCommand", cmd, haiku) // falls back to index
+		cmd, _ = cfg.recapCommand()
+		assertCmd(t, "recapCommand", cmd, sonnet)
 	})
 
 	t.Run("full config", func(t *testing.T) {
@@ -77,39 +83,62 @@ func TestFallbackChains(t *testing.T) {
 			Ask:   askConfig{Command: sonnet, FilterCommand: fast},
 			Recap: commandConfig{Command: sonnet},
 		}
-		assertCmd(t, "indexCommand", cfg.indexCommand(), haiku)
-		assertCmd(t, "askCommand", cfg.askCommand(), sonnet)
-		assertCmd(t, "askFilterCommand", cfg.askFilterCommand(), fast)
-		assertCmd(t, "recapCommand", cfg.recapCommand(), sonnet)
+		cmd, _ := cfg.indexCommand()
+		assertCmd(t, "indexCommand", cmd, haiku)
+		cmd, _ = cfg.askCommand()
+		assertCmd(t, "askCommand", cmd, sonnet)
+		cmd, _ = cfg.askFilterCommand()
+		assertCmd(t, "askFilterCommand", cmd, fast)
+		cmd, _ = cfg.recapCommand()
+		assertCmd(t, "recapCommand", cmd, sonnet)
 	})
 
 	t.Run("only recap configured", func(t *testing.T) {
 		cfg := config{
 			Recap: commandConfig{Command: sonnet},
 		}
-		assertCmd(t, "indexCommand", cfg.indexCommand(), sonnet) // index -> recap
-		assertCmd(t, "askCommand", cfg.askCommand(), sonnet)     // ask -> recap
-		assertCmd(t, "recapCommand", cfg.recapCommand(), sonnet)
+		cmd, _ := cfg.indexCommand()
+		assertCmd(t, "indexCommand", cmd, sonnet) // index -> recap
+		cmd, _ = cfg.askCommand()
+		assertCmd(t, "askCommand", cmd, sonnet) // ask -> recap
+		cmd, _ = cfg.recapCommand()
+		assertCmd(t, "recapCommand", cmd, sonnet)
 	})
 
 	t.Run("only ask configured", func(t *testing.T) {
 		cfg := config{
 			Ask: askConfig{Command: sonnet},
 		}
-		assertCmd(t, "indexCommand", cfg.indexCommand(), sonnet) // index -> recap(nil) -> ask
-		assertCmd(t, "askCommand", cfg.askCommand(), sonnet)
-		assertCmd(t, "askFilterCommand", cfg.askFilterCommand(), sonnet) // filter -> index(nil) -> ask
-		assertCmd(t, "recapCommand", cfg.recapCommand(), sonnet)         // recap -> ask
+		cmd, _ := cfg.indexCommand()
+		assertCmd(t, "indexCommand", cmd, sonnet) // index -> recap(nil) -> ask
+		cmd, _ = cfg.askCommand()
+		assertCmd(t, "askCommand", cmd, sonnet)
+		cmd, _ = cfg.askFilterCommand()
+		assertCmd(t, "askFilterCommand", cmd, sonnet) // filter -> index(nil) -> ask
+		cmd, _ = cfg.recapCommand()
+		assertCmd(t, "recapCommand", cmd, sonnet) // recap -> ask
 	})
 
 	t.Run("nothing configured", func(t *testing.T) {
 		cfg := config{}
-		if cmd := cfg.indexCommand(); cmd != nil {
+		cmd, _ := cfg.indexCommand()
+		if cmd != nil {
 			t.Errorf("expected nil, got %v", cmd)
 		}
 		if cfg.hasAnyCommand() {
 			t.Error("hasAnyCommand should be false")
 		}
+	})
+
+	t.Run("env follows command through fallback", func(t *testing.T) {
+		recapEnv := map[string]string{"AWS_PROFILE": "recap"}
+		cfg := config{
+			Recap: commandConfig{Command: sonnet, Env: recapEnv},
+		}
+		// indexCommand falls back to recap — env should come from recap.
+		cmd, env := cfg.indexCommand()
+		assertCmd(t, "indexCommand", cmd, sonnet)
+		assertEnvMap(t, "indexEnv", env, recapEnv)
 	})
 }
 
@@ -266,6 +295,27 @@ func TestSummaryConfig(t *testing.T) {
 	if sc.Prompt != "custom prompt" {
 		t.Errorf("summaryConfig prompt = %q, want %q", sc.Prompt, "custom prompt")
 	}
+	if sc.Env != nil {
+		t.Errorf("summaryConfig env = %v, want nil (no env configured)", sc.Env)
+	}
+
+	t.Run("with env", func(t *testing.T) {
+		cfg := config{
+			Env:   map[string]string{"AWS_PROFILE": "default"},
+			Index: commandConfig{Command: []string{"llm"}, Env: map[string]string{"FOO": "bar"}},
+		}
+		sc := cfg.summaryConfig()
+		if sc.Env == nil {
+			t.Fatal("expected non-nil env")
+		}
+		envMap := envSliceToMap(sc.Env)
+		if envMap["AWS_PROFILE"] != "default" {
+			t.Errorf("expected AWS_PROFILE=default, got %q", envMap["AWS_PROFILE"])
+		}
+		if envMap["FOO"] != "bar" {
+			t.Errorf("expected FOO=bar, got %q", envMap["FOO"])
+		}
+	})
 }
 
 // assertCmd checks that two string slices match.
@@ -519,7 +569,7 @@ func TestAiFilterSessions(t *testing.T) {
 	// Mock LLM that returns "1\n3\n" (first and third sessions).
 	script := writeMockScript(t, "#!/bin/sh\necho '1\n3'")
 
-	result := aiFilterSessions(context.Background(), []string{script}, "auth", sessions)
+	result := aiFilterSessions(context.Background(), []string{script}, nil, "auth", sessions)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(result))
 	}
@@ -537,7 +587,7 @@ func TestAiFilterSessionsFormats(t *testing.T) {
 	// LLM returns numbers in various formats.
 	script := writeMockScript(t, "#!/bin/sh\necho '2.\n4 - build pipeline'")
 
-	result := aiFilterSessions(context.Background(), []string{script}, "tests", sessions)
+	result := aiFilterSessions(context.Background(), []string{script}, nil, "tests", sessions)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(result))
 	}
@@ -555,7 +605,7 @@ func TestAiFilterSessionsNoResults(t *testing.T) {
 	// LLM returns empty output.
 	script := writeMockScript(t, "#!/bin/sh\necho ''")
 
-	result := aiFilterSessions(context.Background(), []string{script}, "nothing", sessions)
+	result := aiFilterSessions(context.Background(), []string{script}, nil, "nothing", sessions)
 	if len(result) != 0 {
 		t.Errorf("expected 0 results, got %d", len(result))
 	}
@@ -566,7 +616,7 @@ func TestAiFilterSessionsCommandFailure(t *testing.T) {
 
 	script := writeMockScript(t, "#!/bin/sh\nexit 1")
 
-	result := aiFilterSessions(context.Background(), []string{script}, "query", sessions)
+	result := aiFilterSessions(context.Background(), []string{script}, nil, "query", sessions)
 	if result != nil {
 		t.Errorf("expected nil on failure, got %d results", len(result))
 	}
@@ -585,9 +635,131 @@ func TestAiFilterSessionsMaxResults(t *testing.T) {
 	// LLM returns all 20.
 	script := writeMockScript(t, "#!/bin/sh\nseq 1 20")
 
-	result := aiFilterSessions(context.Background(), []string{script}, "all", sessions)
+	result := aiFilterSessions(context.Background(), []string{script}, nil, "all", sessions)
 	if len(result) != 10 {
 		t.Errorf("expected max 10 results, got %d", len(result))
+	}
+}
+
+// --- buildEnv tests ---
+
+func TestBuildEnvNil(t *testing.T) {
+	cfg := config{}
+	env := cfg.buildEnv(nil)
+	if env != nil {
+		t.Errorf("expected nil when no env configured, got %d entries", len(env))
+	}
+}
+
+func TestBuildEnvTopLevelOnly(t *testing.T) {
+	cfg := config{
+		Env: map[string]string{"AWS_PROFILE": "my-profile"},
+	}
+	env := cfg.buildEnv(nil)
+	if env == nil {
+		t.Fatal("expected non-nil env")
+	}
+	m := envSliceToMap(env)
+	if m["AWS_PROFILE"] != "my-profile" {
+		t.Errorf("AWS_PROFILE = %q, want %q", m["AWS_PROFILE"], "my-profile")
+	}
+	// Should still have PATH from the parent process.
+	if m["PATH"] == "" {
+		t.Error("expected PATH to be inherited from parent process")
+	}
+}
+
+func TestBuildEnvCommandOverridesTopLevel(t *testing.T) {
+	cfg := config{
+		Env: map[string]string{"AWS_PROFILE": "default", "AWS_DEFAULT_REGION": "us-east-1"},
+	}
+	cmdEnv := map[string]string{"AWS_DEFAULT_REGION": "us-west-2"}
+	env := cfg.buildEnv(cmdEnv)
+	m := envSliceToMap(env)
+	if m["AWS_PROFILE"] != "default" {
+		t.Errorf("AWS_PROFILE = %q, want %q", m["AWS_PROFILE"], "default")
+	}
+	if m["AWS_DEFAULT_REGION"] != "us-west-2" {
+		t.Errorf("AWS_DEFAULT_REGION = %q, want %q (command should override top-level)", m["AWS_DEFAULT_REGION"], "us-west-2")
+	}
+}
+
+func TestBuildEnvCommandOnlyNoTopLevel(t *testing.T) {
+	cfg := config{}
+	cmdEnv := map[string]string{"FOO": "bar"}
+	env := cfg.buildEnv(cmdEnv)
+	m := envSliceToMap(env)
+	if m["FOO"] != "bar" {
+		t.Errorf("FOO = %q, want %q", m["FOO"], "bar")
+	}
+}
+
+func TestBuildEnvOverridesProcessEnv(t *testing.T) {
+	// Set a process env var and verify buildEnv overrides it.
+	t.Setenv("SESH_TEST_VAR", "original")
+
+	cfg := config{
+		Env: map[string]string{"SESH_TEST_VAR": "overridden"},
+	}
+	env := cfg.buildEnv(nil)
+	m := envSliceToMap(env)
+	if m["SESH_TEST_VAR"] != "overridden" {
+		t.Errorf("SESH_TEST_VAR = %q, want %q", m["SESH_TEST_VAR"], "overridden")
+	}
+
+	// Verify no duplicate entries for the same key.
+	count := 0
+	for _, e := range env {
+		if strings.HasPrefix(e, "SESH_TEST_VAR=") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected 1 SESH_TEST_VAR entry, got %d", count)
+	}
+}
+
+func TestBuildEnvPassedToRunLLM(t *testing.T) {
+	// Script that prints the value of TEST_ENV_VAR.
+	script := writeMockScript(t, "#!/bin/sh\necho $TEST_ENV_VAR")
+
+	cfg := config{
+		Env: map[string]string{"TEST_ENV_VAR": "from_config"},
+	}
+	env := cfg.buildEnv(nil)
+	result, err := summary.RunLLM(context.Background(), []string{script}, env, "input", 5*time.Second)
+	if err != nil {
+		t.Fatalf("RunLLM failed: %v", err)
+	}
+	if result != "from_config" {
+		t.Errorf("got %q, want %q", result, "from_config")
+	}
+}
+
+// --- helpers ---
+
+// envSliceToMap converts a []string env slice to a map for easy lookup.
+func envSliceToMap(env []string) map[string]string {
+	m := make(map[string]string, len(env))
+	for _, e := range env {
+		if k, v, ok := strings.Cut(e, "="); ok {
+			m[k] = v
+		}
+	}
+	return m
+}
+
+// assertEnvMap checks that two env maps match.
+func assertEnvMap(t *testing.T, name string, got, want map[string]string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Errorf("%s = %v, want %v", name, got, want)
+		return
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s[%q] = %q, want %q", name, k, got[k], v)
+		}
 	}
 }
 

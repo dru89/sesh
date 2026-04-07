@@ -21,6 +21,10 @@ type Config struct {
 	// Prompt is prepended to the session text sent to the command.
 	// If empty, a default prompt is used.
 	Prompt string `json:"prompt,omitempty"`
+
+	// Env is the merged environment for the command. If nil, the command
+	// inherits the parent process environment.
+	Env []string `json:"-"`
 }
 
 // IsEnabled returns true if summary generation is configured.
@@ -50,7 +54,7 @@ func (g *Generator) Generate(ctx context.Context, sessionText string) (string, e
 	}
 
 	input := prompt + "\n\n" + sessionText
-	result, err := RunLLM(ctx, g.config.Command, input, 30*time.Second)
+	result, err := RunLLM(ctx, g.config.Command, g.config.Env, input, 30*time.Second)
 	if err != nil {
 		return "", err
 	}
@@ -94,8 +98,9 @@ type BatchItem struct {
 // RunLLM sends input to the configured LLM command and returns the output.
 // This is the shared execution function used by summary generation, recap,
 // and AI fallback search. The command receives input on stdin and should
-// write its response to stdout.
-func RunLLM(ctx context.Context, command []string, input string, timeout time.Duration) (string, error) {
+// write its response to stdout. If env is non-nil, it is used as the
+// command's environment; otherwise the parent process environment is inherited.
+func RunLLM(ctx context.Context, command []string, env []string, input string, timeout time.Duration) (string, error) {
 	if len(command) == 0 {
 		return "", fmt.Errorf("no LLM command configured")
 	}
@@ -105,6 +110,7 @@ func RunLLM(ctx context.Context, command []string, input string, timeout time.Du
 
 	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
 	cmd.Stdin = strings.NewReader(input)
+	cmd.Env = env // nil inherits parent env
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
