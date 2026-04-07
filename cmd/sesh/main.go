@@ -1407,8 +1407,7 @@ func aiFilterSessions(ctx context.Context, command []string, query string, sessi
 // runUpdate checks for and installs the latest version.
 func runUpdate() {
 	// Detect Homebrew installation.
-	execPath, _ := os.Executable()
-	if execPath != "" && strings.Contains(execPath, "/Cellar/") || strings.Contains(execPath, "/homebrew/") {
+	if isHomebrew() {
 		fmt.Fprintf(os.Stderr, "sesh was installed via Homebrew. Use 'brew upgrade sesh' instead.\n")
 		os.Exit(0)
 	}
@@ -1449,13 +1448,30 @@ func runUpdate() {
 	fmt.Fprintf(os.Stderr, "Updated to v%s.\n", latest)
 }
 
+// updateHint returns the appropriate update command for how sesh was installed.
+func updateHint() string {
+	if isHomebrew() {
+		return "brew upgrade sesh"
+	}
+	return "sesh update"
+}
+
+// isHomebrew checks if the running binary was installed via Homebrew.
+func isHomebrew() bool {
+	execPath, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(execPath, "/Cellar/") || strings.Contains(execPath, "/homebrew/")
+}
+
 // checkVersionBackground checks for updates in a goroutine and prints
 // a hint to stderr. Non-blocking — the TUI launches immediately.
 func checkVersionBackground() {
 	// Check cache first.
 	if vc := update.CheckCached(); vc != nil {
 		if update.IsNewer(version, vc.Latest) {
-			fmt.Fprintf(os.Stderr, "sesh: update available (v%s -> v%s). Run 'sesh update' to install.\n", version, vc.Latest)
+			fmt.Fprintf(os.Stderr, "sesh: update available (v%s -> v%s). Run '%s' to install.\n", version, vc.Latest, updateHint())
 		}
 		return
 	}
@@ -1468,7 +1484,7 @@ func checkVersionBackground() {
 	latest := strings.TrimPrefix(release.TagName, "v")
 	update.SaveCache(latest)
 	if update.IsNewer(version, latest) {
-		fmt.Fprintf(os.Stderr, "sesh: update available (v%s -> v%s). Run 'sesh update' to install.\n", version, latest)
+		fmt.Fprintf(os.Stderr, "sesh: update available (v%s -> v%s). Run '%s' to install.\n", version, latest, updateHint())
 	}
 }
 
@@ -1478,7 +1494,7 @@ func checkVersionBackground() {
 func checkVersionSync() {
 	if vc := update.CheckCached(); vc != nil {
 		if update.IsNewer(version, vc.Latest) {
-			fmt.Fprintf(os.Stderr, "sesh: update available (v%s -> v%s). Run 'sesh update' to install.\n", version, vc.Latest)
+			fmt.Fprintf(os.Stderr, "sesh: update available (v%s -> v%s). Run '%s' to install.\n", version, vc.Latest, updateHint())
 		}
 	}
 }
