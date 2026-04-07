@@ -11,6 +11,10 @@ sesh is a CLI tool that aggregates sessions from multiple coding agents into a s
 ## Install
 
 ```bash
+# Homebrew (macOS/Linux)
+brew tap dru89/tap && brew install sesh
+
+# Or with Go
 go install github.com/dru89/sesh/cmd/sesh@latest
 ```
 

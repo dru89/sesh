@@ -4,21 +4,22 @@ A unified session browser for coding agents. Search across OpenCode, Claude Code
 
 ## Install
 
-Download a prebuilt binary from [GitHub Releases](https://github.com/dru89/sesh/releases) and put it on your PATH.
+### Homebrew (macOS/Linux)
 
-Or install with Go (1.23+):
+```bash
+brew tap dru89/tap
+brew install sesh
+```
+
+### Other methods
+
+Download a prebuilt binary from [GitHub Releases](https://github.com/dru89/sesh/releases), or install with Go (1.23+):
 
 ```bash
 go install github.com/dru89/sesh/cmd/sesh@latest
 ```
 
-Or build from source:
-
-```bash
-git clone https://github.com/dru89/sesh.git
-cd sesh
-go build -o ~/go/bin/sesh ./cmd/sesh/
-```
+To update a non-Homebrew install, run `sesh update`.
 
 ### Shell wrapper
 
