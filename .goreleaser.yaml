@@ -52,3 +52,19 @@ release:
     name: sesh
   draft: false
   prerelease: auto
+
+brews:
+  - repository:
+      owner: dru89
+      name: homebrew-tap
+    name: sesh
+    homepage: "https://github.com/dru89/sesh"
+    description: "Unified session browser for coding agents"
+    license: "MIT"
+    install: |
+      bin.install "sesh"
+    test: |
+      system "#{bin}/sesh", "version"
+    extra_install: |
+      bash_completion.install "shell/sesh.bash" => "sesh"
+      zsh_completion.install "shell/sesh.zsh" => "_sesh"
