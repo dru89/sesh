@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -21,8 +22,40 @@ import (
 	"github.com/dru89/sesh/update"
 )
 
-// version is set at build time via ldflags.
+// version and commit are set at build time via ldflags.
 var version = "dev"
+var commit = ""
+
+// versionString returns the display version, including the commit SHA
+// if available. For release builds, GoReleaser injects both via ldflags.
+// For local builds, Go embeds VCS info automatically via runtime/debug.
+func versionString() string {
+	c := commit
+	dirty := false
+	if c == "" {
+		if info, ok := debug.ReadBuildInfo(); ok {
+			for _, s := range info.Settings {
+				switch s.Key {
+				case "vcs.revision":
+					if len(s.Value) >= 7 {
+						c = s.Value[:7]
+					} else {
+						c = s.Value
+					}
+				case "vcs.modified":
+					dirty = s.Value == "true"
+				}
+			}
+		}
+	}
+	if c != "" {
+		if dirty {
+			return version + " (" + c + "-dirty)"
+		}
+		return version + " (" + c + ")"
+	}
+	return version
+}
 
 // config is the user configuration loaded from ~/.config/sesh/config.json.
 type config struct {
@@ -260,7 +293,7 @@ func main() {
 			runStats(os.Args[2:])
 			return
 		case "version":
-			fmt.Printf("sesh %s (%s/%s)\n", version, runtime.GOOS, runtime.GOARCH)
+			fmt.Printf("sesh %s %s/%s\n", versionString(), runtime.GOOS, runtime.GOARCH)
 			return
 		case "update":
 			runUpdate()
