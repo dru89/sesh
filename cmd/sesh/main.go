@@ -348,7 +348,7 @@ func main() {
 	if cfg.hasAnyCommand() {
 		unsummarized := 0
 		for _, s := range all {
-			if s.Summary == "" {
+			if s.Summary == "" && s.SearchText != "" {
 				unsummarized++
 			}
 		}
