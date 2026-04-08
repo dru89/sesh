@@ -67,11 +67,16 @@ export async function aiSearchSessions(query: string): Promise<SeshSession[]> {
       (err, stdout, stderr) => {
         // Debug log to temp file.
         try {
+          const envDump = Object.entries(seshEnv())
+            .filter(([k]) => k.startsWith("AWS") || k === "PATH" || k === "HOME" || k === "SESH_DEBUG")
+            .map(([k, v]) => `${k}=${v}`)
+            .join("\n");
           writeFileSync("/tmp/sesh-raycast-debug.log", [
             `cmd: ${cmd}`,
             `err: ${err?.message ?? "null"}`,
             `stdout (${stdout?.length ?? 0} bytes): ${(stdout ?? "").slice(0, 500)}`,
             `stderr (${stderr?.length ?? 0} bytes): ${(stderr ?? "").slice(0, 500)}`,
+            `\nrelevant env:\n${envDump}`,
           ].join("\n"));
         } catch { /* ignore */ }
 
