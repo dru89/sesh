@@ -2,11 +2,17 @@
 # Source this file from your .zshrc:
 #   source /path/to/sesh.zsh
 #
-# The wrapper is needed because the binary outputs a shell command (cd + exec)
-# that must run in the current shell, not a subprocess.
+# The wrapper is needed because the picker outputs a shell command (cd + exec)
+# that must run in the current shell, not a subprocess. The binary prefixes
+# eval-able output with __sesh_eval: so the wrapper knows when to eval vs.
+# print directly.
 
 sesh() {
-  local cmd
-  cmd=$(command sesh "$@") || return $?
-  eval "$cmd"
+  local out
+  out=$(SESH_WRAPPER=1 command sesh "$@") || return $?
+  if [[ "$out" == __sesh_eval:* ]]; then
+    eval "${out#__sesh_eval:}"
+  elif [[ -n "$out" ]]; then
+    printf '%s\n' "$out"
+  fi
 }

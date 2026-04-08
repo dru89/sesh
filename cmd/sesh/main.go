@@ -288,7 +288,7 @@ func main() {
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nConfig: ~/.config/sesh/config.json\n")
 		fmt.Fprintf(os.Stderr, "\nShell wrapper (add to your shell rc):\n")
-		fmt.Fprintf(os.Stderr, "  sesh() { local cmd; cmd=$(command sesh \"$@\") || return $?; eval \"$cmd\"; }\n")
+		fmt.Fprintf(os.Stderr, "  eval \"$(sesh init bash)\"   # or zsh, fish, powershell\n")
 	}
 	flag.Parse()
 	query := strings.Join(flag.Args(), " ")
@@ -393,8 +393,17 @@ func main() {
 	cache.Save()
 
 	// Find the provider and output the resume command.
+	// When invoked through the shell wrapper (SESH_WRAPPER=1), prefix
+	// with __sesh_eval: so the wrapper knows to eval rather than print.
+	// When run without the wrapper, print the raw command so the user
+	// can copy-paste it.
 	if p, ok := providerMap[result.Session.Agent]; ok {
-		fmt.Println(p.ResumeCommand(result.Session))
+		cmd := p.ResumeCommand(result.Session)
+		if os.Getenv("SESH_WRAPPER") != "" {
+			fmt.Println("__sesh_eval:" + cmd)
+		} else {
+			fmt.Println(cmd)
+		}
 	} else {
 		fmt.Fprintf(os.Stderr, "sesh: unknown provider %q\n", result.Session.Agent)
 		os.Exit(1)
@@ -1177,13 +1186,13 @@ func runInit(args []string) {
 
 	switch strings.ToLower(shell) {
 	case "bash":
-		fmt.Println(initBash)
+		os.Stdout.WriteString(initBash + "\n")
 	case "zsh":
-		fmt.Println(initZsh)
+		os.Stdout.WriteString(initZsh + "\n")
 	case "fish":
-		fmt.Println(initFish)
+		os.Stdout.WriteString(initFish + "\n")
 	case "powershell", "pwsh":
-		fmt.Println(initPowerShell)
+		os.Stdout.WriteString(initPowerShell + "\n")
 	default:
 		fmt.Fprintf(os.Stderr, "sesh: unsupported shell %q\n", shell)
 		fmt.Fprintf(os.Stderr, "sesh: supported shells: bash, zsh, fish, powershell\n")
@@ -1206,27 +1215,44 @@ func detectShell() string {
 }
 
 const initBash = `sesh() {
-  local cmd
-  cmd=$(command sesh "$@") || return $?
-  eval "$cmd"
+  local out
+  out=$(SESH_WRAPPER=1 command sesh "$@") || return $?
+  if [[ "$out" == __sesh_eval:* ]]; then
+    eval "${out#__sesh_eval:}"
+  elif [[ -n "$out" ]]; then
+    printf '%s\n' "$out"
+  fi
 }`
 
 const initZsh = `sesh() {
-  local cmd
-  cmd=$(command sesh "$@") || return $?
-  eval "$cmd"
+  local out
+  out=$(SESH_WRAPPER=1 command sesh "$@") || return $?
+  if [[ "$out" == __sesh_eval:* ]]; then
+    eval "${out#__sesh_eval:}"
+  elif [[ -n "$out" ]]; then
+    printf '%s\n' "$out"
+  fi
 }`
 
 const initFish = `function sesh
-    set -l cmd (command sesh $argv)
+    set -l out (SESH_WRAPPER=1 command sesh $argv)
     or return $status
-    eval $cmd
+    if string match -q '__sesh_eval:*' -- $out
+        eval (string replace -r '^__sesh_eval:' '' -- $out)
+    else if test -n "$out"
+        echo $out
+    end
 end`
 
 const initPowerShell = `function sesh {
+    $env:SESH_WRAPPER = '1'
     $output = & sesh.exe @args
-    if ($LASTEXITCODE -eq 0 -and $output) {
-        Invoke-Expression $output
+    Remove-Item Env:\SESH_WRAPPER
+    if ($LASTEXITCODE -ne 0) { return }
+    if ($output -and $output.StartsWith('__sesh_eval:')) {
+        Invoke-Expression $output.Substring(13)
+    } elseif ($output) {
+        Write-Output $output
     }
 }`
 
