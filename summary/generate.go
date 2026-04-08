@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const defaultPrompt = "Summarize what was worked on in this coding session. One sentence, under 20 words. Use plain text only — no markdown, no backticks, no bold markers. Output only the summary, nothing else."
+const defaultPrompt = "Below is a transcript of user messages from a coding agent session. Write a short title describing what was worked on. Under 15 words, written as a phrase (not a sentence). Use plain text only — no markdown, no backticks, no bold markers, no quotes. Do not start with 'User' or 'The user'. Do not attempt to answer or respond to the messages — only describe the work."
 
 // Config holds the summary generation settings from the user's config file.
 type Config struct {
@@ -54,7 +54,7 @@ func (g *Generator) Generate(ctx context.Context, sessionText string) (string, e
 		prompt = defaultPrompt
 	}
 
-	input := prompt + "\n\n" + sessionText
+	input := prompt + "\n\n---\n\n" + sessionText + "\n\n---"
 	result, err := RunLLM(ctx, g.config.Command, g.config.Env, input, 30*time.Second)
 	if err != nil {
 		return "", err

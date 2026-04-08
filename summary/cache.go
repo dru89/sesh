@@ -103,6 +103,13 @@ func (c *Cache) Len() int {
 	return len(c.entries)
 }
 
+// Clear removes all cached summaries.
+func (c *Cache) Clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries = make(map[string]Entry)
+}
+
 // Save persists the cache to disk.
 func (c *Cache) Save() error {
 	c.mu.RLock()

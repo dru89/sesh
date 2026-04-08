@@ -403,6 +403,7 @@ func main() {
 func runIndex(args []string) {
 	fs := flag.NewFlagSet("index", flag.ExitOnError)
 	agentFilter := fs.String("agent", "", "Only index sessions for a specific agent")
+	clearFlag := fs.Bool("clear", false, "Clear all cached summaries before indexing")
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: sesh index [options]\n\n")
 		fmt.Fprintf(os.Stderr, "Generate summaries for all sessions that don't have one.\n")
@@ -422,6 +423,15 @@ func runIndex(args []string) {
 
 	providers := buildProviders(cfg)
 	cache := summary.NewCache()
+
+	if *clearFlag {
+		cache.Clear()
+		if err := cache.Save(); err != nil {
+			fmt.Fprintf(os.Stderr, "sesh: warning: failed to save cleared cache: %v\n", err)
+		}
+		fmt.Fprintf(os.Stderr, "Cleared summary cache.\n")
+	}
+
 	ctx := context.Background()
 
 	all := collectSessions(ctx, providers, *agentFilter)

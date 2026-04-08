@@ -166,6 +166,26 @@ func TestCacheLen(t *testing.T) {
 	}
 }
 
+func TestCacheClear(t *testing.T) {
+	c := newTestCache(t)
+	c.Put("a", "x", time.Now())
+	c.Put("b", "y", time.Now())
+	if c.Len() != 2 {
+		t.Fatalf("expected 2, got %d", c.Len())
+	}
+
+	c.Clear()
+	if c.Len() != 0 {
+		t.Errorf("after Clear(), Len() = %d, want 0", c.Len())
+	}
+
+	// Should be able to put new entries after clear.
+	c.Put("c", "z", time.Now())
+	if c.Len() != 1 {
+		t.Errorf("after re-add, Len() = %d, want 1", c.Len())
+	}
+}
+
 func newTestCache(t *testing.T) *Cache {
 	t.Helper()
 	dir := t.TempDir()
