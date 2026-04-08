@@ -292,19 +292,22 @@ var (
 	helpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	aiStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("3")) // yellow
 
-	agentColors = map[string]lipgloss.Color{
-		"opencode": lipgloss.Color("4"), // blue
-		"claude":   lipgloss.Color("5"), // magenta
-	}
-	defaultAgentColor = lipgloss.Color("3") // yellow
+	// agentPalette is the set of ANSI colors used for agent badges.
+	// Excludes 0 (black, invisible on dark bg) and 7 (gray, used for dim text).
+	agentPalette = []lipgloss.Color{"1", "2", "3", "4", "5", "6"}
 )
 
-func renderAgent(name string) string {
-	color, ok := agentColors[name]
-	if !ok {
-		color = defaultAgentColor
+func agentColor(name string) lipgloss.Color {
+	// djb2 hash — good distribution for short strings.
+	var h uint32 = 5381
+	for i := 0; i < len(name); i++ {
+		h = (h << 5) + h + uint32(name[i])
 	}
-	return lipgloss.NewStyle().Foreground(color).Render(name)
+	return agentPalette[h%uint32(len(agentPalette))]
+}
+
+func renderAgent(name string) string {
+	return lipgloss.NewStyle().Foreground(agentColor(name)).Render(name)
 }
 
 // --- View ---

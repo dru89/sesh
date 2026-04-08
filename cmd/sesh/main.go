@@ -893,14 +893,14 @@ func runList(args []string) {
 
 // colorAgent returns an ANSI-colored agent name for terminal output.
 func colorAgent(name string) string {
-	switch name {
-	case "opencode":
-		return "\033[34m" + name + "\033[0m" // blue
-	case "claude":
-		return "\033[35m" + name + "\033[0m" // magenta
-	default:
-		return "\033[33m" + name + "\033[0m" // yellow
+	// ANSI colors 1-6: red, green, yellow, blue, magenta, cyan.
+	palette := []string{"\033[31m", "\033[32m", "\033[33m", "\033[34m", "\033[35m", "\033[36m"}
+	// djb2 hash — matches the TUI picker's color assignment.
+	var h uint32 = 5381
+	for i := 0; i < len(name); i++ {
+		h = (h << 5) + h + uint32(name[i])
 	}
+	return palette[h%uint32(len(palette))] + name + "\033[0m"
 }
 
 // isTerminal checks if stdout is a terminal.
@@ -1100,7 +1100,12 @@ func runStats(args []string) {
 		return agents[i].count > agents[j].count
 	})
 	for _, a := range agents {
-		fmt.Printf("  %-12s %d\n", a.name, a.count)
+		if isTTY {
+			// ANSI codes add 9 bytes of invisible chars; pad extra to compensate.
+			fmt.Printf("  %-21s %d\n", colorAgent(a.name), a.count)
+		} else {
+			fmt.Printf("  %-12s %d\n", a.name, a.count)
+		}
 	}
 
 	heading("By time")
@@ -1128,7 +1133,13 @@ func runStats(args []string) {
 		recentLimit = len(all)
 	}
 	for _, s := range all[:recentLimit] {
-		fmt.Printf("  %-10s %-50s %s\n", s.Agent, truncate(s.DisplayTitle(), 50), provider.RelativeTime(s.LastUsed))
+		agent := s.Agent
+		if isTTY {
+			agent = colorAgent(agent)
+			fmt.Printf("  %-19s %-50s %s\n", agent, truncate(s.DisplayTitle(), 50), provider.RelativeTime(s.LastUsed))
+		} else {
+			fmt.Printf("  %-10s %-50s %s\n", agent, truncate(s.DisplayTitle(), 50), provider.RelativeTime(s.LastUsed))
+		}
 	}
 }
 

@@ -3,8 +3,8 @@
     "id": "pm_7x8y9z0a1b2c3d4e5f6g7h8i",
     "title": "Build dashboard charts with Recharts",
     "slug": "",
-    "created": "2026-04-08T16:01:07Z",
-    "last_used": "2026-04-08T16:54:07Z",
+    "created": "2026-04-08T16:14:43Z",
+    "last_used": "2026-04-08T17:07:43Z",
     "directory": "/Users/drew.hays/Developer/github.com/meridian-dev/atlas-web",
     "text": "I need to add usage charts to the admin dashboard. We're using Recharts. I want a line chart for daily active users, a bar chart for API calls by endpoint, and a pie chart for error distribution. Pull data from the /analytics endpoint."
   },
@@ -12,8 +12,8 @@
     "id": "pm_8y9z0a1b2c3d4e5f6g7h8i9j",
     "title": "Implement dark mode toggle in shared-ui",
     "slug": "",
-    "created": "2026-04-08T11:26:07Z",
-    "last_used": "2026-04-08T12:26:07Z",
+    "created": "2026-04-08T11:39:43Z",
+    "last_used": "2026-04-08T12:39:43Z",
     "directory": "/Users/drew.hays/Developer/github.com/meridian-dev/shared-ui",
     "text": "Add dark mode support to the shared-ui component library. We need a ThemeProvider context, a toggle component, and CSS variables for the color tokens. All existing components should respect the theme."
   },
@@ -21,8 +21,8 @@
     "id": "pm_2c3d4e5f6g7h8i9j0k1l2m3n",
     "title": "Add loading skeletons to dashboard pages",
     "slug": "",
-    "created": "2026-04-08T05:36:07Z",
-    "last_used": "2026-04-08T06:26:07Z",
+    "created": "2026-04-08T05:49:43Z",
+    "last_used": "2026-04-08T06:39:43Z",
     "directory": "/Users/drew.hays/Developer/github.com/meridian-dev/atlas-web",
     "text": "The dashboard pages show a blank screen while data loads. Add skeleton loading states that match the layout of the real content. Use the Skeleton component from shared-ui."
   },
@@ -30,8 +30,8 @@
     "id": "pm_9z0a1b2c3d4e5f6g7h8i9j0k",
     "title": "Fix table component sort not resetting on filter",
     "slug": "",
-    "created": "2026-04-07T12:56:07Z",
-    "last_used": "2026-04-07T13:46:07Z",
+    "created": "2026-04-07T13:09:43Z",
+    "last_used": "2026-04-07T13:59:43Z",
     "directory": "/Users/drew.hays/Developer/github.com/meridian-dev/shared-ui",
     "text": "The DataTable component has a bug where the sort order persists when you change the filter. When a user filters the table, the sort should reset to the default. Also the sort indicator arrow is rendering wrong in Safari."
   },
@@ -39,8 +39,8 @@
     "id": "pm_3d4e5f6g7h8i9j0k1l2m3n4o",
     "title": "Build tenant settings page with form validation",
     "slug": "",
-    "created": "2026-04-06T23:36:07Z",
-    "last_used": "2026-04-07T01:16:07Z",
+    "created": "2026-04-06T23:49:43Z",
+    "last_used": "2026-04-07T01:29:43Z",
     "directory": "/Users/drew.hays/Developer/github.com/meridian-dev/atlas-web",
     "text": "Build the tenant settings page. It needs sections for general info, billing, and team members. Use react-hook-form for validation. The billing section should show current plan and usage."
   },
@@ -48,8 +48,8 @@
     "id": "pm_0a1b2c3d4e5f6g7h8i9j0k1l",
     "title": "Add search with keyboard navigation to atlas-web",
     "slug": "",
-    "created": "2026-04-05T14:16:07Z",
-    "last_used": "2026-04-05T15:56:07Z",
+    "created": "2026-04-05T14:29:43Z",
+    "last_used": "2026-04-05T16:09:43Z",
     "directory": "/Users/drew.hays/Developer/github.com/meridian-dev/atlas-web",
     "text": "Build a command palette style search for atlas-web. Cmd+K to open, fuzzy search over pages and recent items, arrow keys to navigate results, enter to select. Use the cmdk library."
   },
@@ -57,8 +57,8 @@
     "id": "pm_4e5f6g7h8i9j0k1l2m3n4o5p",
     "title": "Add toast notification system to shared-ui",
     "slug": "",
-    "created": "2026-04-04T21:36:07Z",
-    "last_used": "2026-04-04T23:16:07Z",
+    "created": "2026-04-04T21:49:43Z",
+    "last_used": "2026-04-04T23:29:43Z",
     "directory": "/Users/drew.hays/Developer/github.com/meridian-dev/shared-ui",
     "text": "We need a toast notification component in shared-ui. Support success, error, warning, and info variants. Auto-dismiss after 5 seconds with a progress bar. Stack multiple toasts vertically."
   },
@@ -66,8 +66,8 @@
     "id": "pm_1b2c3d4e5f6g7h8i9j0k1l2m",
     "title": "Migrate atlas-web from webpack to vite",
     "slug": "",
-    "created": "2026-04-02T14:36:07Z",
-    "last_used": "2026-04-02T17:56:07Z",
+    "created": "2026-04-02T14:49:43Z",
+    "last_used": "2026-04-02T18:09:43Z",
     "directory": "/Users/drew.hays/Developer/github.com/meridian-dev/atlas-web",
     "text": "Our webpack build takes 45 seconds. Let's migrate to vite. The main concerns are our custom webpack plugins for SVG handling and the proxy config for the API dev server."
   },
@@ -75,8 +75,8 @@
     "id": "pm_5f6g7h8i9j0k1l2m3n4o5p6q",
     "title": "Set up Storybook for shared-ui components",
     "slug": "",
-    "created": "2026-03-31T09:16:07Z",
-    "last_used": "2026-03-31T10:56:07Z",
+    "created": "2026-03-31T09:29:43Z",
+    "last_used": "2026-03-31T11:09:43Z",
     "directory": "/Users/drew.hays/Developer/github.com/meridian-dev/shared-ui",
     "text": "Set up Storybook for the shared-ui library. Create stories for Button, Input, DataTable, Modal, and the new toast component. Configure it to use our theme tokens."
   }

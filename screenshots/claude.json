@@ -3,8 +3,8 @@
     "id": "01jf8k2m-3n4o-5p6q-7r8s-9t0u1v2w3x4y",
     "title": "Draft blog post on migrating from REST to gRPC",
     "slug": "gentle-harbor",
-    "created": "2026-04-08T15:36:07Z",
-    "last_used": "2026-04-08T16:21:07Z",
+    "created": "2026-04-08T15:49:43Z",
+    "last_used": "2026-04-08T16:34:43Z",
     "directory": "/Users/drew.hays/Developer/github.com/dru89/blog",
     "text": "I'm writing a blog post about our experience migrating the atlas API from REST to gRPC. I want to cover the motivation, what went well, and the surprises. Audience is mid-senior engineers who are considering the same move."
   },
@@ -12,8 +12,8 @@
     "id": "06jk3p7r-8s9t-0u1v-2w3x-4y5z6a7b8c9d",
     "title": "Explain atlas-api middleware chain to new team member",
     "slug": "warm-lantern",
-    "created": "2026-04-08T10:16:07Z",
-    "last_used": "2026-04-08T10:46:07Z",
+    "created": "2026-04-08T10:29:43Z",
+    "last_used": "2026-04-08T10:59:43Z",
     "directory": "/Users/drew.hays/Developer/github.com/meridian-dev/atlas-api",
     "text": "I need to explain how our middleware chain works to a new team member. Walk through the request lifecycle from the router through auth, rate limiting, tenant context, and the handler. Focus on how context propagation works."
   },
@@ -21,8 +21,8 @@
     "id": "02jg9l3n-4o5p-6q7r-8s9t-0u1v2w3x4y5z",
     "title": "Review atlas-web authentication flow",
     "slug": "copper-wave",
-    "created": "2026-04-07T14:36:07Z",
-    "last_used": "2026-04-07T15:56:07Z",
+    "created": "2026-04-07T14:49:43Z",
+    "last_used": "2026-04-07T16:09:43Z",
     "directory": "/Users/drew.hays/Developer/github.com/meridian-dev/atlas-web",
     "text": "Walk me through the current auth flow in atlas-web. I want to understand the token refresh logic and where we're storing credentials. I think there might be a race condition when multiple tabs are open."
   },
@@ -30,8 +30,8 @@
     "id": "07jl4q8s-9t0u-1v2w-3x4y-5z6a7b8c9d0e",
     "title": "Compare testing strategies for Go HTTP handlers",
     "slug": "silver-dune",
-    "created": "2026-04-06T11:56:07Z",
-    "last_used": "2026-04-06T13:36:07Z",
+    "created": "2026-04-06T12:09:43Z",
+    "last_used": "2026-04-06T13:49:43Z",
     "directory": "/Users/drew.hays/Developer/github.com/meridian-dev/atlas-api",
     "text": "We're inconsistent about how we test HTTP handlers. Some tests use `httptest.Server`, some use `httptest.ResponseRecorder`, some mock the whole service layer. What's the right approach for our codebase?"
   },
@@ -39,8 +39,8 @@
     "id": "03jh0m4o-5p6q-7r8s-9t0u-1v2w3x4y5z6a",
     "title": "Design doc for notification service architecture",
     "slug": "amber-cloud",
-    "created": "2026-04-04T16:36:07Z",
-    "last_used": "2026-04-04T18:16:07Z",
+    "created": "2026-04-04T16:49:43Z",
+    "last_used": "2026-04-04T18:29:43Z",
     "directory": "/Users/drew.hays/Developer/github.com/meridian-dev/atlas-api",
     "text": "I need to write a design doc for a new notification service. It needs to support email, push, and in-app notifications with user preferences. Help me structure the doc and think through the tradeoffs between polling and WebSockets for in-app."
   },
@@ -48,8 +48,8 @@
     "id": "08jm5r9t-0u1v-2w3x-4y5z-6a7b8c9d0e1f",
     "title": "Plan blog series on building multi-tenant SaaS",
     "slug": "frost-garden",
-    "created": "2026-04-03T23:56:07Z",
-    "last_used": "2026-04-04T00:46:07Z",
+    "created": "2026-04-04T00:09:43Z",
+    "last_used": "2026-04-04T00:59:43Z",
     "directory": "/Users/drew.hays/Developer/github.com/dru89/blog",
     "text": "I want to write a 4-part blog series about building multi-tenant SaaS in Go. Help me outline the series: part 1 on data isolation strategies, part 2 on auth and tenant context, part 3 on billing integration, part 4 on operational lessons."
   },
@@ -57,8 +57,8 @@
     "id": "04ji1n5p-6q7r-8s9t-0u1v-2w3x4y5z6a7b",
     "title": "Explore error boundary patterns for React 19",
     "slug": "velvet-prism",
-    "created": "2026-04-02T16:16:07Z",
-    "last_used": "2026-04-02T17:16:07Z",
+    "created": "2026-04-02T16:29:43Z",
+    "last_used": "2026-04-02T17:29:43Z",
     "directory": "/Users/drew.hays/Developer/github.com/meridian-dev/atlas-web",
     "text": "React 19 changed how error boundaries work. What are the recommended patterns now? We have a custom ErrorBoundary component that catches render errors but I want to understand if there's a better approach with the new APIs."
   },
@@ -66,8 +66,8 @@
     "id": "05jj2o6q-7r8s-9t0u-1v2w-3x4y5z6a7b8c",
     "title": "Outline Q3 platform reliability roadmap",
     "slug": "quiet-summit",
-    "created": "2026-03-31T17:36:07Z",
-    "last_used": "2026-03-31T19:16:07Z",
+    "created": "2026-03-31T17:49:43Z",
+    "last_used": "2026-03-31T19:29:43Z",
     "directory": "/Users/drew.hays/Writing/Q3 Roadmap",
     "text": "Help me outline the Q3 reliability roadmap. Key themes are observability improvements, automated failover for the API tier, and SLO-based alerting. The audience is engineering leadership."
   }
