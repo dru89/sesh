@@ -66,7 +66,7 @@ func (g *Generator) Generate(ctx context.Context, sessionText string) (string, e
 	}
 
 	// Strip markdown artifacts that LLMs sometimes include despite instructions.
-	result = stripMarkdown(result)
+	result = StripMarkdown(result)
 
 	return result, nil
 }
@@ -143,14 +143,28 @@ var (
 	reItalic     = regexp.MustCompile(`(?:^|[^*])\*([^*]+?)\*(?:[^*]|$)`)
 	reInlineCode = regexp.MustCompile("`([^`]+)`")
 	reHeading    = regexp.MustCompile(`(?m)^#{1,6}\s+`)
+	reHRule      = regexp.MustCompile(`(?m)^[-*_]{3,}\s*$`)
 )
 
 // StripMarkdown removes common markdown formatting artifacts from text.
+// Collapses multi-line output to a single line since summaries are displayed
+// as single-row entries in the TUI.
 func StripMarkdown(s string) string {
 	s = reBold.ReplaceAllString(s, "$1")
 	s = reItalic.ReplaceAllString(s, "$1")
 	s = reInlineCode.ReplaceAllString(s, "$1")
 	s = reHeading.ReplaceAllString(s, "")
+	s = reHRule.ReplaceAllString(s, "")
+
+	// Collapse newlines into spaces — summaries must be single-line for
+	// the TUI list and other display contexts.
+	s = strings.ReplaceAll(s, "\r\n", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+
+	// Clean up runs of whitespace left by stripping.
+	for strings.Contains(s, "  ") {
+		s = strings.ReplaceAll(s, "  ", " ")
+	}
 
 	// Strip leading list markers (-, *, •).
 	s = strings.TrimLeft(s, "-*• ")

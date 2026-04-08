@@ -439,8 +439,6 @@ func runIndex(args []string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "Generating summaries for %d/%d sessions...\n", len(need), len(all))
-
 	// Build batch items by fetching session text from providers.
 	needMap := make(map[string]bool, len(need))
 	for _, n := range need {
@@ -458,14 +456,23 @@ func runIndex(args []string) {
 		}
 		text := p.SessionText(ctx, s.ID)
 		if text == "" {
-			// Use title + search text as fallback.
-			text = s.Title
+			// No session text available — skip rather than summarizing the
+			// bare title, which produces confused LLM output like
+			// "I don't have access to this session."
+			continue
 		}
 		items = append(items, summary.BatchItem{
 			ID:       s.ID,
 			LastUsed: s.LastUsed,
 			Text:     text,
 		})
+	}
+
+	skipped := len(need) - len(items)
+	if skipped > 0 {
+		fmt.Fprintf(os.Stderr, "Generating summaries for %d/%d sessions (%d skipped — no session text)...\n", len(items), len(all), skipped)
+	} else {
+		fmt.Fprintf(os.Stderr, "Generating summaries for %d/%d sessions...\n", len(items), len(all))
 	}
 
 	gen := summary.NewGenerator(cfg.summaryConfig())
@@ -521,7 +528,9 @@ func lazyIndex(ctx context.Context, cfg summary.Config, cache *summary.Cache, se
 		}
 		text := p.SessionText(ctx, s.ID)
 		if text == "" {
-			text = s.Title
+			// No session text available — skip rather than summarizing the
+			// bare title, which produces confused LLM output.
+			continue
 		}
 		items = append(items, summary.BatchItem{
 			ID:       s.ID,
@@ -879,8 +888,9 @@ func isTerminal() bool {
 // runShow handles the `sesh show` subcommand.
 func runShow(args []string) {
 	fs := flag.NewFlagSet("show", flag.ExitOnError)
+	jsonFlag := fs.Bool("json", false, "Output as JSON (includes session text)")
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: sesh show <session-id>\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: sesh show [--json] <session-id>\n\n")
 		fmt.Fprintf(os.Stderr, "Show details for a session. Accepts a full or partial session ID.\n")
 	}
 	fs.Parse(args)
@@ -916,6 +926,25 @@ func runShow(args []string) {
 
 	s := match
 	providerMap := providersByName(providers)
+
+	// JSON output mode.
+	if *jsonFlag {
+		type jsonShowSession struct {
+			jsonSession
+			Text string `json:"text,omitempty"`
+		}
+		out := jsonShowSession{
+			jsonSession: jsonSession{Session: *s},
+		}
+		if p, ok := providerMap[s.Agent]; ok {
+			out.ResumeCommand = p.ResumeCommand(*s)
+			out.Text = p.SessionText(ctx, s.ID)
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetEscapeHTML(false)
+		enc.Encode(out)
+		return
+	}
 
 	// Print metadata.
 	isTTY := isTerminal()
@@ -1261,9 +1290,9 @@ func collectSessions(ctx context.Context, providers []provider.Provider, agentFi
 func applySummaries(sessions []provider.Session, cache *summary.Cache) {
 	for i := range sessions {
 		if s, ok := cache.Get(sessions[i].ID, sessions[i].LastUsed); ok {
-			sessions[i].Summary = s
+			sessions[i].Summary = summary.StripMarkdown(s)
 			// Also add summary to search text for fuzzy matching.
-			sessions[i].SearchText += " " + s
+			sessions[i].SearchText += " " + sessions[i].Summary
 		}
 	}
 }
@@ -1460,7 +1489,17 @@ func aiFilterSessions(ctx context.Context, command []string, env []string, query
 
 	result, err := summary.RunLLM(ctx, command, env, input.String(), 30*time.Second)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "sesh: ai search failed: %v\n", err)
 		return nil
+	}
+
+	// Debug: log what the LLM returned for troubleshooting.
+	if os.Getenv("SESH_DEBUG") != "" {
+		preview := result
+		if len(preview) > 200 {
+			preview = preview[:200]
+		}
+		fmt.Fprintf(os.Stderr, "sesh: debug: llm returned %d bytes: %q\n", len(result), preview)
 	}
 
 	var matched []provider.Session

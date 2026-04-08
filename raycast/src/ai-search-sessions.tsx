@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Icon, List } from "@raycast/api";
-import { aiSearchSessions } from "./sesh";
+import { aiSearchSessions, getSessionText } from "./sesh";
 import {
   agentColor,
   displayTitle,
@@ -15,6 +15,8 @@ export default function AiSearchSessions() {
   const [results, setResults] = useState<SeshSession[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [textCache, setTextCache] = useState<Record<string, string>>({});
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef(false);
 
@@ -54,12 +56,30 @@ export default function AiSearchSessions() {
     };
   }, [searchText]);
 
+  // Async-load session text when the detail pane is showing and selection changes.
+  useEffect(() => {
+    if (!showDetail || !selectedId) return;
+    const session = results.find(
+      (s) => `${s.agent}-${s.id}` === selectedId
+    );
+    if (!session || textCache[session.id]) return;
+
+    let cancelled = false;
+    getSessionText(session.id).then((text) => {
+      if (!cancelled && text) {
+        setTextCache((prev) => ({ ...prev, [session.id]: text }));
+      }
+    });
+    return () => { cancelled = true; };
+  }, [selectedId, showDetail]);
+
   return (
     <List
       isLoading={isLoading}
       isShowingDetail={showDetail}
       filtering={false}
       onSearchTextChange={setSearchText}
+      onSelectionChange={setSelectedId}
       searchBarPlaceholder="Ask about your sessions..."
       navigationTitle="AI Search Sessions"
     >
@@ -87,7 +107,7 @@ export default function AiSearchSessions() {
               source: Icon.Terminal,
               tintColor: agentColor(session.agent),
             }}
-            {...sessionListItemProps(session, showDetail)}
+            {...sessionListItemProps(session, showDetail, textCache[session.id])}
             actions={
               <SessionActions
                 session={session}

@@ -24,32 +24,22 @@ export function displayTitle(session: SeshSession): string {
   return session.summary || session.title || session.slug || session.id;
 }
 
-export function sessionDetailMarkdown(session: SeshSession): string {
+export function sessionDetailMarkdown(
+  session: SeshSession,
+  sessionText?: string
+): string {
   const lines: string[] = [];
 
+  // Compact header: title, then one-line metadata.
   lines.push(`## ${displayTitle(session)}`);
   lines.push("");
-  lines.push(`| Field | Value |`);
-  lines.push(`|---|---|`);
-  lines.push(`| **Agent** | ${session.agent} |`);
-  lines.push(`| **Session ID** | \`${session.id}\` |`);
-  if (session.slug) {
-    lines.push(`| **Slug** | ${session.slug} |`);
-  }
+
+  const meta: string[] = [`**${session.agent}**`];
+  meta.push(relativeTime(session.last_used));
   if (session.directory) {
-    lines.push(`| **Directory** | \`${abbreviateHome(session.directory)}\` |`);
+    meta.push(`\`${abbreviateHome(session.directory)}\``);
   }
-  lines.push(
-    `| **Created** | ${new Date(session.created).toLocaleString()} |`
-  );
-  lines.push(
-    `| **Last Used** | ${new Date(session.last_used).toLocaleString()} (${relativeTime(session.last_used)}) |`
-  );
-  lines.push("");
-  lines.push("**Resume command:**");
-  lines.push("```");
-  lines.push(session.resume_command);
-  lines.push("```");
+  lines.push(meta.join("  ·  "));
 
   if (
     session.title &&
@@ -57,7 +47,14 @@ export function sessionDetailMarkdown(session: SeshSession): string {
     session.title !== session.summary
   ) {
     lines.push("");
-    lines.push(`**Original title:** ${session.title}`);
+    lines.push(`*${session.title}*`);
+  }
+
+  if (sessionText) {
+    lines.push("");
+    lines.push("---");
+    lines.push("");
+    lines.push(sessionText);
   }
 
   return lines.join("\n");
@@ -128,12 +125,15 @@ export function SessionActions({
 
 export function sessionListItemProps(
   session: SeshSession,
-  showDetail: boolean
+  showDetail: boolean,
+  sessionText?: string
 ): Partial<List.Item.Props> {
   if (showDetail) {
     return {
       detail: (
-        <List.Item.Detail markdown={sessionDetailMarkdown(session)} />
+        <List.Item.Detail
+          markdown={sessionDetailMarkdown(session, sessionText)}
+        />
       ),
     };
   }

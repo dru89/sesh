@@ -6,7 +6,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/sahilm/fuzzy"
 
@@ -64,6 +66,7 @@ type model struct {
 	all            []provider.Session
 	filtered       []provider.Session
 	query          string
+	textInput      textinput.Model
 	cursor         int
 	width          int
 	height         int
@@ -80,9 +83,19 @@ type model struct {
 
 func newModel(sessions []provider.Session, opts PickOptions) model {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	ti := textinput.New()
+	ti.Prompt = "> "
+	ti.PromptStyle = promptStyle
+	ti.Focus()
+	if opts.InitialQuery != "" {
+		ti.SetValue(opts.InitialQuery)
+	}
+
 	m := model{
 		all:            sessions,
 		query:          opts.InitialQuery,
+		textInput:      ti,
 		fallbackSearch: opts.FallbackSearch,
 		fallbackCtx:    ctx,
 		fallbackCancel: cancel,
@@ -95,7 +108,7 @@ func newModel(sessions []provider.Session, opts PickOptions) model {
 }
 
 func (m model) Init() tea.Cmd {
-	return nil
+	return nil // cursor blink is started by Focus() in newModel
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -103,6 +116,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		// Reserve space for the count string next to the input.
+		m.textInput.Width = msg.Width - 16
 		return m, nil
 
 	case fallbackResultMsg:
@@ -119,6 +134,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Intercept keys used for list navigation and special actions.
+		// Everything else is forwarded to the textinput component.
 		switch msg.Type {
 		case tea.KeyCtrlC, tea.KeyEsc:
 			m.fallbackCancel()
@@ -136,27 +153,47 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor > 0 {
 				m.cursor--
 			}
+			return m, nil
 
 		case tea.KeyDown:
 			if m.cursor < len(m.filtered)-1 {
 				m.cursor++
 			}
+			return m, nil
 
 		case tea.KeyTab:
 			m.showDetail = !m.showDetail
+			return m, nil
 
-		case tea.KeyBackspace, tea.KeyDelete:
-			if len(m.query) > 0 {
-				m.query = m.query[:len(m.query)-1]
-				return m, m.filterWithFallback()
+		case tea.KeyCtrlS:
+			// Force AI search with the current query.
+			if m.fallbackSearch != nil && len(m.query) >= 2 {
+				m.searching = true
+				query := m.query
+				all := m.all
+				fn := m.fallbackSearch
+				ctx := m.fallbackCtx
+				return m, func() tea.Msg {
+					results := fn(ctx, query, all)
+					return fallbackResultMsg{sessions: results}
+				}
 			}
-
-		case tea.KeyRunes:
-			m.query += string(msg.Runes)
-			return m, m.filterWithFallback()
+			return m, nil
 		}
 	}
-	return m, nil
+
+	// Forward all other messages (text input keys, cursor blinks, etc.)
+	// to the textinput component.
+	prevQuery := m.query
+	var cmd tea.Cmd
+	m.textInput, cmd = m.textInput.Update(msg)
+	m.query = m.textInput.Value()
+	if m.query != prevQuery {
+		if filterCmd := m.filterWithFallback(); filterCmd != nil {
+			return m, tea.Batch(cmd, filterCmd)
+		}
+	}
+	return m, cmd
 }
 
 // filterWithFallback runs fuzzy search, and if it returns no results and a
@@ -380,9 +417,7 @@ func (m model) viewDetail(w int) string {
 		}
 		if text != "" {
 			b.WriteString("\n")
-			b.WriteString(labelStyle.Render("First messages:"))
-			b.WriteString("\n")
-			// Wrap text to detail width and cap at available height.
+			// Cap text length to available space.
 			maxChars := w * (m.height - 14)
 			if maxChars < 200 {
 				maxChars = 200
@@ -390,15 +425,38 @@ func (m model) viewDetail(w int) string {
 			if len(text) > maxChars {
 				text = text[:maxChars] + "…"
 			}
-			// Simple wrapping.
-			for _, line := range strings.Split(text, "\n") {
-				for len(line) > w {
-					b.WriteString(dimStyle.Render(line[:w]))
-					b.WriteString("\n")
-					line = line[w:]
+			// Render as markdown using glamour.
+			rendered, err := glamour.Render(text, "dark")
+			if err == nil {
+				// glamour output may have trailing whitespace; trim it
+				// and cap to available height.
+				lines := strings.Split(strings.TrimRight(rendered, "\n"), "\n")
+				maxLines := m.height - 14
+				if maxLines < 5 {
+					maxLines = 5
 				}
-				b.WriteString(dimStyle.Render(line))
-				b.WriteString("\n")
+				if len(lines) > maxLines {
+					lines = lines[:maxLines]
+				}
+				for _, line := range lines {
+					// Truncate wide lines to pane width.
+					if lipgloss.Width(line) > w {
+						line = line[:w]
+					}
+					b.WriteString(line)
+					b.WriteString("\n")
+				}
+			} else {
+				// Fallback: plain text wrapping.
+				for _, line := range strings.Split(text, "\n") {
+					for len(line) > w {
+						b.WriteString(dimStyle.Render(line[:w]))
+						b.WriteString("\n")
+						line = line[w:]
+					}
+					b.WriteString(dimStyle.Render(line))
+					b.WriteString("\n")
+				}
 			}
 		}
 	}
@@ -409,9 +467,14 @@ func (m model) viewDetail(w int) string {
 func (m model) viewList(w int, fullW int) string {
 	var b strings.Builder
 
-	// Prompt line.
-	b.WriteString(promptStyle.Render("> "))
-	b.WriteString(m.query)
+	// Prompt line — rendered by the textinput component (includes cursor).
+	ti := m.textInput
+	if m.searching || m.searchMode == "ai" {
+		ti.PromptStyle = aiStyle
+	} else {
+		ti.PromptStyle = promptStyle
+	}
+	b.WriteString(ti.View())
 	countStr := fmt.Sprintf("  %d/%d", len(m.filtered), len(m.all))
 	if m.searchMode == "ai" {
 		countStr += " (AI)"
@@ -423,6 +486,11 @@ func (m model) viewList(w int, fullW int) string {
 
 	// Available height for the list.
 	listH := m.height - 4
+	// The selected item shows a directory line beneath it, consuming an
+	// extra row. Subtract one more so the total content fits the terminal.
+	if !m.showDetail && len(m.filtered) > 0 && m.cursor < len(m.filtered) && m.filtered[m.cursor].Directory != "" {
+		listH--
+	}
 	if listH < 1 {
 		listH = 20
 	}
@@ -517,6 +585,9 @@ func (m model) viewList(w int, fullW int) string {
 
 	b.WriteString("\n")
 	helpText := "  ↑/↓ navigate  enter select  tab detail  esc quit"
+	if m.fallbackSearch != nil {
+		helpText += "  ^S AI search"
+	}
 	b.WriteString(helpStyle.Render(helpText))
 
 	return b.String()

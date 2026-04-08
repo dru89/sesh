@@ -4,6 +4,17 @@
 
 `sesh` is a CLI tool that aggregates coding agent sessions (OpenCode, Claude Code, and external agents) into a unified fuzzy-search picker. Select a session and it resumes the agent in the right directory.
 
+## Development guidelines
+
+When making changes to sesh, always:
+
+1. **Update tests.** New functions should have test coverage. Run `go test ./...` before committing.
+2. **Update README.md** if user-facing behavior changes (new commands, flags, config options).
+3. **Update CLAUDE.md** if internal architecture changes (new packages, data flows, design decisions).
+4. **Update AGENTS.md** if the setup process or config schema changes.
+5. **Update schema.json** if config fields are added or modified.
+6. **Run the CI check locally** (`go test ./... && go build ./cmd/sesh/`) before pushing.
+
 ## Project structure
 
 ```
@@ -74,7 +85,9 @@ The binary outputs a shell command string to stdout (`cd /path && agent --resume
 
 **Providers** (`providers`): Listed under built-in names (`opencode`, `claude`) to override resume commands or disable. Any other name is an external provider requiring `list_command`.
 
-**LLM commands** (`index`, `ask`, `recap`): Each subcommand has its own `command` and `prompt` fields. `ask` also has `filter_command` for the classification pass. Each subcommand falls back through the others via a priority chain so you only need to configure one.
+**LLM commands** (`index`, `ask`, `recap`): Each subcommand has its own `command`, `prompt`, and `env` fields. `ask` also has `filter_command` for the classification pass. Each subcommand falls back through the others via a priority chain so you only need to configure one.
+
+**Environment** (`env`): Top-level `env` map applies to all LLM commands. Per-command `env` overrides specific keys. Merge order: process env < top-level env < per-command env. Built by `buildEnv()` which starts from `os.Environ()` and overlays config values. Critical for Raycast/non-shell environments where AWS credentials aren't in the process environment.
 
 Fallback chains (flat, no recursion):
 - `index`: index -> recap -> ask -> ask.filter_command
@@ -156,7 +169,7 @@ Press Tab in the picker to toggle a split view: the list narrows to ~40% and a d
 
 ## Show subcommand
 
-`sesh show <id>` accepts a full or partial session ID. Uses `findSession()` which checks exact match first, then unique prefix. If multiple sessions match a prefix, it lists the ambiguous candidates and exits. Prints metadata (agent, ID, slug, title, summary, directory, timestamps, resume command) and the first ~1000 chars of user messages via `SessionText()`.
+`sesh show <id>` accepts a full or partial session ID. Uses `findSession()` which checks exact match first, then unique prefix. If multiple sessions match a prefix, it lists the ambiguous candidates and exits. Prints metadata (agent, ID, slug, title, summary, directory, timestamps, resume command) and the first ~1000 chars of user messages via `SessionText()`. `sesh show --json <id>` outputs the full session as JSON including the session text (used by the Raycast detail view).
 
 ## Stats subcommand
 

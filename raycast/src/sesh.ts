@@ -1,5 +1,4 @@
 import { exec, execSync } from "child_process";
-import { writeFileSync } from "fs";
 import { getPreferenceValues, showToast, Toast } from "@raycast/api";
 import { SeshSession } from "./types";
 
@@ -11,7 +10,6 @@ export function getSeshPath(): string {
 function seshEnv(): NodeJS.ProcessEnv {
   return {
     ...process.env,
-    SESH_DEBUG: "1",
     PATH: [
       process.env.PATH,
       "/usr/local/bin",
@@ -43,6 +41,37 @@ export function loadSessions(): SeshSession[] {
   }
 }
 
+/**
+ * Fetch session details including the full session text.
+ * Calls `sesh show --json <id>` and returns the text field.
+ */
+export async function getSessionText(sessionId: string): Promise<string | undefined> {
+  const sesh = getSeshPath();
+  return new Promise((resolve) => {
+    exec(
+      `${sesh} show --json ${shellQuote(sessionId)}`,
+      {
+        timeout: 5000,
+        encoding: "utf-8",
+        shell: "/bin/bash",
+        env: seshEnv(),
+      },
+      (err, stdout) => {
+        if (err || !stdout) {
+          resolve(undefined);
+          return;
+        }
+        try {
+          const data: SeshSession = JSON.parse(stdout);
+          resolve(data.text);
+        } catch {
+          resolve(undefined);
+        }
+      }
+    );
+  });
+}
+
 // aiSearchSessions is async so the loading indicator actually renders.
 // execSync would block the event loop and prevent Raycast from updating the UI.
 export async function aiSearchSessions(query: string): Promise<SeshSession[]> {
@@ -65,21 +94,6 @@ export async function aiSearchSessions(query: string): Promise<SeshSession[]> {
         env: seshEnv(),
       },
       (err, stdout, stderr) => {
-        // Debug log to temp file.
-        try {
-          const envDump = Object.entries(seshEnv())
-            .filter(([k]) => k.startsWith("AWS") || k === "PATH" || k === "HOME" || k === "SESH_DEBUG")
-            .map(([k, v]) => `${k}=${v}`)
-            .join("\n");
-          writeFileSync("/tmp/sesh-raycast-debug.log", [
-            `cmd: ${cmd}`,
-            `err: ${err?.message ?? "null"}`,
-            `stdout (${stdout?.length ?? 0} bytes): ${(stdout ?? "").slice(0, 500)}`,
-            `stderr (${stderr?.length ?? 0} bytes): ${(stderr ?? "").slice(0, 500)}`,
-            `\nrelevant env:\n${envDump}`,
-          ].join("\n"));
-        } catch { /* ignore */ }
-
         if (err) {
           const msg = stderr?.trim() || err.message;
           showToast({

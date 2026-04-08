@@ -8,4 +8,5 @@ export interface SeshSession {
   last_used: string;
   directory?: string;
   resume_command: string;
+  text?: string;
 }
