@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dru89/sesh/agent"
 	"github.com/dru89/sesh/provider"
 	"github.com/dru89/sesh/summary"
 )
@@ -546,17 +547,184 @@ func TestInitOutputs(t *testing.T) {
 	}
 }
 
+// --- buildProviders tests ---
+
+func TestBuildProvidersDefault(t *testing.T) {
+	// No config: should get built-in opencode and claude.
+	cfg := config{}
+	providers := buildProviders(cfg)
+
+	names := providerNames(providers)
+	if !contains(names, "opencode") {
+		t.Error("expected opencode provider")
+	}
+	if !contains(names, "claude") {
+		t.Error("expected claude provider")
+	}
+
+	// Verify they're the built-in types, not external.
+	for _, p := range providers {
+		switch p.Name() {
+		case "opencode":
+			if _, ok := p.(*provider.OpenCode); !ok {
+				t.Errorf("opencode should be *provider.OpenCode, got %T", p)
+			}
+		case "claude":
+			if _, ok := p.(*provider.Claude); !ok {
+				t.Errorf("claude should be *provider.Claude, got %T", p)
+			}
+		}
+	}
+}
+
+func TestBuildProvidersListCommandOverridesBuiltin(t *testing.T) {
+	// If opencode has a list_command, it should be treated as external.
+	cfg := config{
+		Providers: map[string]providerConfig{
+			"opencode": {
+				ListCommand:   []string{"cat", "sessions.json"},
+				ResumeCommand: json.RawMessage(`"opencode -s {{ID}}"`),
+			},
+		},
+	}
+	providers := buildProviders(cfg)
+
+	for _, p := range providers {
+		if p.Name() == "opencode" {
+			if _, ok := p.(*provider.External); !ok {
+				t.Errorf("opencode with list_command should be *provider.External, got %T", p)
+			}
+			return
+		}
+	}
+	t.Error("expected opencode provider")
+}
+
+func TestBuildProvidersListCommandOverridesClaude(t *testing.T) {
+	// Same for claude.
+	cfg := config{
+		Providers: map[string]providerConfig{
+			"claude": {
+				ListCommand:   []string{"cat", "claude.json"},
+				ResumeCommand: json.RawMessage(`"claude --resume {{ID}}"`),
+			},
+		},
+	}
+	providers := buildProviders(cfg)
+
+	for _, p := range providers {
+		if p.Name() == "claude" {
+			if _, ok := p.(*provider.External); !ok {
+				t.Errorf("claude with list_command should be *provider.External, got %T", p)
+			}
+			return
+		}
+	}
+	t.Error("expected claude provider")
+}
+
+func TestBuildProvidersBuiltinWithResumeOnly(t *testing.T) {
+	// If opencode has only a resume_command (no list_command), it stays built-in.
+	cfg := config{
+		Providers: map[string]providerConfig{
+			"opencode": {
+				ResumeCommand: json.RawMessage(`"ca opencode -s {{ID}}"`),
+			},
+		},
+	}
+	providers := buildProviders(cfg)
+
+	for _, p := range providers {
+		if p.Name() == "opencode" {
+			if _, ok := p.(*provider.OpenCode); !ok {
+				t.Errorf("opencode without list_command should be *provider.OpenCode, got %T", p)
+			}
+			return
+		}
+	}
+	t.Error("expected opencode provider")
+}
+
+func TestBuildProvidersDisabled(t *testing.T) {
+	disabled := false
+	cfg := config{
+		Providers: map[string]providerConfig{
+			"opencode": {Enabled: &disabled},
+		},
+	}
+	providers := buildProviders(cfg)
+
+	for _, p := range providers {
+		if p.Name() == "opencode" {
+			t.Error("opencode should be disabled")
+		}
+	}
+}
+
+func TestBuildProvidersExternal(t *testing.T) {
+	cfg := config{
+		Providers: map[string]providerConfig{
+			"omp": {
+				ListCommand:   []string{"omp-sesh"},
+				ResumeCommand: json.RawMessage(`"omp --resume {{ID}}"`),
+			},
+		},
+	}
+	providers := buildProviders(cfg)
+
+	names := providerNames(providers)
+	if !contains(names, "omp") {
+		t.Error("expected omp provider")
+	}
+
+	for _, p := range providers {
+		if p.Name() == "omp" {
+			if _, ok := p.(*provider.External); !ok {
+				t.Errorf("omp should be *provider.External, got %T", p)
+			}
+		}
+	}
+}
+
+func providerNames(providers []provider.Provider) []string {
+	var names []string
+	for _, p := range providers {
+		names = append(names, p.Name())
+	}
+	return names
+}
+
+func contains(ss []string, s string) bool {
+	for _, v := range ss {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
 // --- colorAgent tests ---
 
 func TestColorAgent(t *testing.T) {
 	// Just verify it returns non-empty strings and doesn't panic.
-	for _, agent := range []string{"opencode", "claude", "omp", "unknown"} {
-		got := colorAgent(agent)
+	for _, name := range []string{"opencode", "claude", "omp", "unknown"} {
+		got := colorAgent(name)
 		if got == "" {
-			t.Errorf("colorAgent(%q) returned empty", agent)
+			t.Errorf("colorAgent(%q) returned empty", name)
 		}
-		if !strings.Contains(got, agent) {
-			t.Errorf("colorAgent(%q) = %q, should contain agent name", agent, got)
+		if !strings.Contains(got, name) {
+			t.Errorf("colorAgent(%q) = %q, should contain agent name", name, got)
+		}
+	}
+}
+
+func TestColorAgentUsesSharedHash(t *testing.T) {
+	// Verify that colorAgent produces the ANSI code matching agent.ANSIColor.
+	for _, name := range []string{"opencode", "claude", "pi-mono", "omp"} {
+		got := colorAgent(name)
+		wantCode := fmt.Sprintf("\033[%dm", 30+agent.ANSIColor(name))
+		if !strings.HasPrefix(got, wantCode) {
+			t.Errorf("colorAgent(%q) starts with wrong ANSI code: got %q, want prefix %q", name, got, wantCode)
 		}
 	}
 }

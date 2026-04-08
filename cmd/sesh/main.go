@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/glamour"
+	"github.com/dru89/sesh/agent"
 	"github.com/dru89/sesh/provider"
 	"github.com/dru89/sesh/summary"
 	"github.com/dru89/sesh/tui"
@@ -893,14 +894,8 @@ func runList(args []string) {
 
 // colorAgent returns an ANSI-colored agent name for terminal output.
 func colorAgent(name string) string {
-	// ANSI colors 1-6: red, green, yellow, blue, magenta, cyan.
-	palette := []string{"\033[31m", "\033[32m", "\033[33m", "\033[34m", "\033[35m", "\033[36m"}
-	// djb2 hash — matches the TUI picker's color assignment.
-	var h uint32 = 5381
-	for i := 0; i < len(name); i++ {
-		h = (h << 5) + h + uint32(name[i])
-	}
-	return palette[h%uint32(len(palette))] + name + "\033[0m"
+	// ANSI color codes: 31=red, 32=green, 33=yellow, 34=blue, 35=magenta, 36=cyan.
+	return fmt.Sprintf("\033[%dm%s\033[0m", 30+agent.ANSIColor(name), name)
 }
 
 // isTerminal checks if stdout is a terminal.

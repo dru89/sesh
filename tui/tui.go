@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/sahilm/fuzzy"
 
+	"github.com/dru89/sesh/agent"
 	"github.com/dru89/sesh/provider"
 )
 
@@ -297,17 +298,9 @@ var (
 	agentPalette = []lipgloss.Color{"1", "2", "3", "4", "5", "6"}
 )
 
-func agentColor(name string) lipgloss.Color {
-	// djb2 hash — good distribution for short strings.
-	var h uint32 = 5381
-	for i := 0; i < len(name); i++ {
-		h = (h << 5) + h + uint32(name[i])
-	}
-	return agentPalette[h%uint32(len(agentPalette))]
-}
-
 func renderAgent(name string) string {
-	return lipgloss.NewStyle().Foreground(agentColor(name)).Render(name)
+	color := agentPalette[agent.ColorIndex(name)]
+	return lipgloss.NewStyle().Foreground(color).Render(name)
 }
 
 // --- View ---
