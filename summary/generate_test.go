@@ -201,3 +201,33 @@ func writeMockScript(t *testing.T, content string) string {
 	}
 	return path
 }
+
+func TestStripMarkdown(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"plain text", "hello world", "hello world"},
+		{"bold", "this is **bold** text", "this is bold text"},
+		{"inline code", "use `sesh` to search", "use sesh to search"},
+		{"heading", "## Session Summary\nthe content", "Session Summary the content"},
+		{"hrule", "---\ncontent after", "content after"},
+		{"multiline collapses", "line one\nline two\nline three", "line one line two line three"},
+		{"crlf collapses", "line one\r\nline two", "line one line two"},
+		{"double spaces cleaned", "too  many   spaces", "too many spaces"},
+		{"leading list marker dash", "- Built auth middleware", "Built auth middleware"},
+		{"leading list marker bullet", "• Fixed login bug", "Fixed login bug"},
+		{"leading list marker star", "* Refactored API", "Refactored API"},
+		{"combined", "## Summary\n**Built** `auth` middleware\n- for the API", "Summary Built auth middleware - for the API"},
+		{"empty", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := StripMarkdown(tt.input)
+			if got != tt.want {
+				t.Errorf("StripMarkdown(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
