@@ -87,8 +87,9 @@ func TestOpenCodeSessionText(t *testing.T) {
 	if text == "" {
 		t.Error("expected non-empty session text")
 	}
-	if text != "Help me fix the auth middleware" {
-		t.Errorf("got %q, want %q", text, "Help me fix the auth middleware")
+	want := "User: Help me fix the auth middleware\n\nAssistant: I'll take a look at the auth middleware code."
+	if text != want {
+		t.Errorf("got %q, want %q", text, want)
 	}
 }
 
@@ -186,6 +187,15 @@ func createTestOpenCodeDB(t *testing.T) string {
 	db.Exec(`INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)`,
 		"prt_1", "msg_1", "ses_newer", now-500, now-500, string(partData))
 
+	// Insert an assistant message + text part for ses_newer.
+	assistMsgData, _ := json.Marshal(map[string]string{"role": "assistant"})
+	db.Exec(`INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)`,
+		"msg_2", "ses_newer", now-400, now-400, string(assistMsgData))
+
+	assistPartData, _ := json.Marshal(map[string]string{"type": "text", "text": "I'll take a look at the auth middleware code."})
+	db.Exec(`INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)`,
+		"prt_2", "msg_2", "ses_newer", now-400, now-400, string(assistPartData))
+
 	return dbPath
 }
 
@@ -237,8 +247,9 @@ func TestClaudeSessionText(t *testing.T) {
 	if text == "" {
 		t.Error("expected non-empty session text")
 	}
-	if text != "Help me with auth" {
-		t.Errorf("got %q, want %q", text, "Help me with auth")
+	want := "User: Help me with auth\n\nAssistant: Sure"
+	if text != want {
+		t.Errorf("got %q, want %q", text, want)
 	}
 }
 

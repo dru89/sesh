@@ -204,8 +204,9 @@ func (c *Claude) ResumeCommand(session Session) string {
 	return CdAndRun(session.Directory, cmd)
 }
 
-// SessionText returns concatenated user prompt text for summary generation.
-// Reads the session transcript file and extracts user message content.
+// SessionText returns the conversation text for a session, interleaving user
+// prompts and assistant responses. Reads the session transcript file and
+// extracts both user and assistant message content.
 func (c *Claude) SessionText(ctx context.Context, sessionID string) string {
 	// Find the transcript file by scanning project directories.
 	projectsDir := filepath.Join(c.baseDir, "projects")
@@ -219,52 +220,121 @@ func (c *Claude) SessionText(ctx context.Context, sessionID string) string {
 			continue
 		}
 		path := filepath.Join(projectsDir, dir.Name(), sessionID+".jsonl")
-		if text := c.extractUserText(path); text != "" {
+		if text := c.extractConversationText(path); text != "" {
 			return text
 		}
 	}
 	return ""
 }
 
-// extractUserText reads a session JSONL and pulls user message text.
-func (c *Claude) extractUserText(path string) string {
+// extractConversationText reads a session JSONL and pulls both user and
+// assistant message text in conversation order.
+func (c *Claude) extractConversationText(path string) string {
 	f, err := os.Open(path)
 	if err != nil {
 		return ""
 	}
 	defer f.Close()
 
-	var prompts []string
+	// Claude streams assistant messages as multiple JSONL lines with the same
+	// message ID, each with progressively more content. We keep the longest
+	// text for each message ID to get the final version.
+	type msgEntry struct {
+		role string
+		text string
+		seq  int // insertion order
+	}
+	messages := make(map[string]*msgEntry)
+	var order []string // unique message keys in order
+	seq := 0
+
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 	for scanner.Scan() {
-		var msg struct {
+		var raw struct {
 			Type    string `json:"type"`
 			Message struct {
+				ID      string          `json:"id"`
 				Role    string          `json:"role"`
 				Content json.RawMessage `json:"content"`
 			} `json:"message"`
+			ParentUUID string `json:"parentUuid"`
 		}
-		if err := json.Unmarshal(scanner.Bytes(), &msg); err != nil {
+		if err := json.Unmarshal(scanner.Bytes(), &raw); err != nil {
 			continue
 		}
-		if msg.Type != "user" || msg.Message.Role != "user" {
+
+		role := raw.Message.Role
+		if role != "user" && role != "assistant" {
 			continue
 		}
-		// Content can be a string or an array of content blocks.
+
+		// Extract text content.
 		var text string
-		if err := json.Unmarshal(msg.Message.Content, &text); err == nil {
-			if text != "" && !strings.HasPrefix(text, "[") {
-				prompts = append(prompts, text)
+		if role == "user" {
+			// User content is either a string or an array.
+			var s string
+			if err := json.Unmarshal(raw.Message.Content, &s); err == nil {
+				text = s
+			}
+		} else {
+			// Assistant content is an array of content blocks.
+			var blocks []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			}
+			if err := json.Unmarshal(raw.Message.Content, &blocks); err == nil {
+				var textParts []string
+				for _, b := range blocks {
+					if b.Type == "text" && b.Text != "" {
+						textParts = append(textParts, b.Text)
+					}
+				}
+				text = strings.Join(textParts, "")
 			}
 		}
-		// Skip tool_result arrays — they're auto-generated, not user prompts.
 
-		if len(prompts) >= 10 {
-			break
+		text = strings.TrimSpace(text)
+		if text == "" {
+			continue
+		}
+
+		// Build a unique key for dedup: message ID for assistants, parentUUID for users.
+		key := raw.Message.ID
+		if key == "" {
+			key = raw.ParentUUID
+		}
+		if key == "" {
+			key = fmt.Sprintf("anon-%d", seq)
+		}
+
+		if existing, ok := messages[key]; ok {
+			// Keep the longer version (streaming builds up progressively).
+			if len(text) > len(existing.text) {
+				existing.text = text
+			}
+		} else {
+			messages[key] = &msgEntry{role: role, text: text, seq: seq}
+			order = append(order, key)
+			seq++
 		}
 	}
-	return strings.Join(prompts, "\n\n")
+
+	// Build conversation text in order.
+	var parts []string
+	for _, key := range order {
+		entry := messages[key]
+		if entry.role == "user" {
+			// Skip shell commands and slash commands.
+			if strings.HasPrefix(entry.text, "!") || strings.HasPrefix(entry.text, "/") {
+				continue
+			}
+			parts = append(parts, "User: "+entry.text)
+		} else {
+			parts = append(parts, "Assistant: "+entry.text)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 var _ Provider = (*Claude)(nil)

@@ -139,7 +139,9 @@ func (o *OpenCode) ResumeCommand(session Session) string {
 	return CdAndRun(session.Directory, cmd)
 }
 
-// SessionText returns concatenated user prompt text for summary generation.
+// SessionText returns the conversation text for a session, interleaving user
+// prompts and assistant responses. Each message is prefixed with "User:" or
+// "Assistant:" for clarity.
 func (o *OpenCode) SessionText(ctx context.Context, sessionID string) string {
 	if _, err := os.Stat(o.dbPath); os.IsNotExist(err) {
 		return ""
@@ -152,14 +154,13 @@ func (o *OpenCode) SessionText(ctx context.Context, sessionID string) string {
 	defer db.Close()
 
 	rows, err := db.QueryContext(ctx, `
-		SELECT json_extract(p.data, '$.text')
+		SELECT json_extract(m.data, '$.role'), json_extract(p.data, '$.type'), json_extract(p.data, '$.text')
 		FROM part p
 		JOIN message m ON p.message_id = m.id
 		WHERE m.session_id = ?
-		  AND json_extract(m.data, '$.role') = 'user'
 		  AND json_extract(p.data, '$.type') = 'text'
+		  AND json_extract(m.data, '$.role') IN ('user', 'assistant')
 		ORDER BY m.time_created ASC, p.time_created ASC
-		LIMIT 10
 	`, sessionID)
 	if err != nil {
 		return ""
@@ -167,10 +168,29 @@ func (o *OpenCode) SessionText(ctx context.Context, sessionID string) string {
 	defer rows.Close()
 
 	var parts []string
+	lastRole := ""
 	for rows.Next() {
+		var role, partType string
 		var text sql.NullString
-		if err := rows.Scan(&text); err == nil && text.Valid && text.String != "" {
-			parts = append(parts, text.String)
+		if err := rows.Scan(&role, &partType, &text); err != nil || !text.Valid || text.String == "" {
+			continue
+		}
+		content := strings.TrimSpace(text.String)
+		if content == "" {
+			continue
+		}
+
+		// Add role prefix when the speaker changes.
+		if role != lastRole {
+			if role == "user" {
+				parts = append(parts, "User: "+content)
+			} else {
+				parts = append(parts, "Assistant: "+content)
+			}
+			lastRole = role
+		} else {
+			// Continuation of the same speaker — just append.
+			parts = append(parts, content)
 		}
 	}
 	return strings.Join(parts, "\n\n")
