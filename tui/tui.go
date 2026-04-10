@@ -11,7 +11,6 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/sahilm/fuzzy"
 
 	"github.com/dru89/sesh/agent"
 	"github.com/dru89/sesh/provider"
@@ -206,8 +205,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// filterWithFallback runs fuzzy search, and if it returns no results and a
-// fallback is configured, kicks off an async AI search.
+// filterWithFallback runs structured + fuzzy search, and if it returns no
+// results and a fallback is configured, kicks off an async AI search.
 func (m *model) filterWithFallback() tea.Cmd {
 	m.searchMode = "fuzzy"
 	m.searching = false
@@ -218,23 +217,23 @@ func (m *model) filterWithFallback() tea.Cmd {
 		return nil
 	}
 
-	source := sessionSource(m.all)
-	matches := fuzzy.FindFrom(m.query, source)
-	m.filtered = make([]provider.Session, len(matches))
-	for i, match := range matches {
-		m.filtered[i] = m.all[match.Index]
-	}
+	pq := ParseQuery(m.query)
+	m.filtered = FilterSessions(m.all, pq)
 	m.clampCursor()
 
-	// If fuzzy found nothing and we have a fallback, trigger it.
-	if len(m.filtered) == 0 && m.fallbackSearch != nil && len(m.query) >= 3 {
+	// If filtering found nothing and we have a fallback, trigger it.
+	// Only use the freeform text portion for the AI query.
+	freeText := pq.Text
+	if freeText == "" {
+		freeText = m.query
+	}
+	if len(m.filtered) == 0 && m.fallbackSearch != nil && len(freeText) >= 3 {
 		m.searching = true
-		query := m.query
 		all := m.all
 		fn := m.fallbackSearch
 		ctx := m.fallbackCtx
 		return func() tea.Msg {
-			results := fn(ctx, query, all)
+			results := fn(ctx, freeText, all)
 			return fallbackResultMsg{sessions: results}
 		}
 	}
@@ -246,12 +245,8 @@ func (m *model) filter() {
 	if m.query == "" {
 		m.filtered = m.all
 	} else {
-		source := sessionSource(m.all)
-		matches := fuzzy.FindFrom(m.query, source)
-		m.filtered = make([]provider.Session, len(matches))
-		for i, match := range matches {
-			m.filtered[i] = m.all[match.Index]
-		}
+		pq := ParseQuery(m.query)
+		m.filtered = FilterSessions(m.all, pq)
 	}
 	m.clampCursor()
 }
@@ -596,7 +591,7 @@ func (m model) viewList(w int, fullW int) string {
 	}
 
 	b.WriteString("\n")
-	helpText := "  ↑/↓ navigate  enter select  tab detail  esc quit"
+	helpText := "  ↑/↓ navigate  enter select  tab detail  esc quit  dir: agent: filters"
 	if m.fallbackSearch != nil {
 		helpText += "  ^S AI search"
 	}

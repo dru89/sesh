@@ -13,6 +13,7 @@ import (
 	"github.com/dru89/sesh/agent"
 	"github.com/dru89/sesh/provider"
 	"github.com/dru89/sesh/summary"
+	"github.com/dru89/sesh/tui"
 )
 
 func TestResolveCommand(t *testing.T) {
@@ -338,11 +339,95 @@ func assertCmd(t *testing.T, name string, got, want []string) {
 func testSessions() []provider.Session {
 	now := time.Now()
 	return []provider.Session{
-		{Agent: "opencode", ID: "ses_abc123", Title: "Auth middleware", LastUsed: now},
-		{Agent: "opencode", ID: "ses_abc456", Title: "Fix tests", LastUsed: now.Add(-time.Hour)},
-		{Agent: "claude", ID: "uuid-1234-5678", Title: "Refactor API", LastUsed: now.Add(-2 * time.Hour)},
-		{Agent: "opencode", ID: "ses_def789", Title: "Build pipeline", LastUsed: now.Add(-24 * time.Hour)},
+		{Agent: "opencode", ID: "ses_abc123", Title: "Auth middleware", LastUsed: now, Directory: "/home/drew/projects/sesh", SearchText: "Auth middleware sesh"},
+		{Agent: "opencode", ID: "ses_abc456", Title: "Fix tests", LastUsed: now.Add(-time.Hour), Directory: "/home/drew/projects/sesh", SearchText: "Fix tests sesh"},
+		{Agent: "claude", ID: "uuid-1234-5678", Title: "Refactor API", LastUsed: now.Add(-2 * time.Hour), Directory: "/home/drew/projects/api-gateway", SearchText: "Refactor API api-gateway"},
+		{Agent: "opencode", ID: "ses_def789", Title: "Build pipeline", LastUsed: now.Add(-24 * time.Hour), Directory: "/home/drew/work/infra", SearchText: "Build pipeline infra"},
 	}
+}
+
+// --- query integration tests ---
+
+func TestQueryFilterIntegration(t *testing.T) {
+	sessions := testSessions()
+
+	t.Run("agent flag filters by agent name", func(t *testing.T) {
+		query := tui.BuildPrefixQuery("", "opencode", "")
+		pq := tui.ParseQuery(query)
+		result := tui.FilterSessions(sessions, pq)
+		for _, s := range result {
+			if s.Agent != "opencode" {
+				t.Errorf("expected opencode, got %s", s.Agent)
+			}
+		}
+		if len(result) != 3 {
+			t.Errorf("expected 3 opencode sessions, got %d", len(result))
+		}
+	})
+
+	t.Run("dir flag filters by directory", func(t *testing.T) {
+		query := tui.BuildPrefixQuery("/home/drew/projects/sesh", "", "")
+		pq := tui.ParseQuery(query)
+		result := tui.FilterSessions(sessions, pq)
+		if len(result) < 2 {
+			t.Fatalf("expected at least 2 results for sesh dir, got %d", len(result))
+		}
+		// Sessions 1 and 2 have this exact directory.
+		ids := make(map[string]bool)
+		for _, s := range result {
+			ids[s.ID] = true
+		}
+		if !ids["ses_abc123"] || !ids["ses_abc456"] {
+			t.Errorf("expected ses_abc123 and ses_abc456 in results, got %v", ids)
+		}
+	})
+
+	t.Run("dir and agent combined", func(t *testing.T) {
+		query := tui.BuildPrefixQuery("/home/drew/projects/sesh", "opencode", "")
+		pq := tui.ParseQuery(query)
+		result := tui.FilterSessions(sessions, pq)
+		if len(result) != 2 {
+			t.Fatalf("expected 2 results, got %d", len(result))
+		}
+	})
+
+	t.Run("dir and agent and text", func(t *testing.T) {
+		query := tui.BuildPrefixQuery("/home/drew/projects/sesh", "opencode", "Auth")
+		pq := tui.ParseQuery(query)
+		result := tui.FilterSessions(sessions, pq)
+		if len(result) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(result))
+		}
+		if result[0].ID != "ses_abc123" {
+			t.Errorf("expected ses_abc123, got %s", result[0].ID)
+		}
+	})
+
+	t.Run("fuzzy agent match via flag", func(t *testing.T) {
+		query := tui.BuildPrefixQuery("", "clude", "")
+		pq := tui.ParseQuery(query)
+		result := tui.FilterSessions(sessions, pq)
+		// "clude" should fuzzy-match "claude".
+		if len(result) != 1 {
+			t.Fatalf("expected 1 claude result, got %d", len(result))
+		}
+		if result[0].Agent != "claude" {
+			t.Errorf("expected claude, got %s", result[0].Agent)
+		}
+	})
+
+	t.Run("empty flags returns all", func(t *testing.T) {
+		query := tui.BuildPrefixQuery("", "", "")
+		if query != "" {
+			t.Fatalf("expected empty query, got %q", query)
+		}
+		// Empty query means no filtering.
+		pq := tui.ParseQuery(query)
+		result := tui.FilterSessions(sessions, pq)
+		if len(result) != len(sessions) {
+			t.Errorf("expected %d sessions, got %d", len(sessions), len(result))
+		}
+	})
 }
 
 func TestFindSessionExactMatch(t *testing.T) {

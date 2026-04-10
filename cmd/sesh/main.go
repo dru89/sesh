@@ -303,7 +303,9 @@ func main() {
 
 	jsonMode := flag.Bool("json", false, "Output session list as JSON and exit")
 	aiSearch := flag.String("ai-search", "", "AI-ranked search query (use with --json)")
-	agentFilter := flag.String("agent", "", "Filter by agent name")
+	agentFilter := flag.String("agent", "", "Filter by agent name (or use agent: in search)")
+	dirFilter := flag.String("dir", "", "Filter by directory path (or use dir: in search)")
+	cwdFlag := flag.Bool("cwd", false, "Filter to current working directory (shorthand for --dir .)")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: sesh [options] [query]\n\n")
 		fmt.Fprintf(os.Stderr, "A unified session browser for coding agents.\n\n")
@@ -319,20 +321,52 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  version  Print version information\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nSearch prefixes:\n")
+		fmt.Fprintf(os.Stderr, "  dir:<path>    Filter by directory (fuzzy match)\n")
+		fmt.Fprintf(os.Stderr, "  agent:<name>  Filter by agent name (fuzzy match)\n")
 		fmt.Fprintf(os.Stderr, "\nConfig: ~/.config/sesh/config.json\n")
 		fmt.Fprintf(os.Stderr, "\nShell wrapper (add to your shell rc):\n")
 		fmt.Fprintf(os.Stderr, "  eval \"$(sesh init bash)\"   # or zsh, fish, powershell\n")
 	}
 	flag.Parse()
-	query := strings.Join(flag.Args(), " ")
+
+	// Validate --dir and --cwd are mutually exclusive.
+	if *dirFilter != "" && *cwdFlag {
+		fmt.Fprintf(os.Stderr, "sesh: --dir and --cwd are mutually exclusive\n")
+		os.Exit(1)
+	}
+
+	// Resolve --cwd to --dir with the current working directory.
+	if *cwdFlag {
+		cwd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "sesh: failed to get working directory: %v\n", err)
+			os.Exit(1)
+		}
+		*dirFilter = cwd
+	}
+
+	// Resolve --dir to an absolute, cleaned path.
+	if *dirFilter != "" {
+		resolved, err := tui.ResolveDir(*dirFilter)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "sesh: failed to resolve directory %q: %v\n", *dirFilter, err)
+			os.Exit(1)
+		}
+		*dirFilter = resolved
+	}
+
+	// Build the initial query from flags + positional args.
+	positionalQuery := strings.Join(flag.Args(), " ")
+	query := tui.BuildPrefixQuery(*dirFilter, *agentFilter, positionalQuery)
 
 	cfg := loadConfig()
 	providers := buildProviders(cfg)
 	cache := summary.NewCache()
 
-	// Collect sessions from all providers.
+	// Collect sessions from all providers (filtering is handled by the query system).
 	ctx := context.Background()
-	all := collectSessions(ctx, providers, *agentFilter)
+	all := collectSessions(ctx, providers, "")
 
 	// Apply cached summaries to sessions.
 	applySummaries(all, cache)
@@ -345,6 +379,12 @@ func main() {
 	// JSON mode: dump and exit.
 	if *jsonMode {
 		sessions := all
+
+		// Apply structured query filters (dir:, agent:, freeform text).
+		if query != "" {
+			pq := tui.ParseQuery(query)
+			sessions = tui.FilterSessions(sessions, pq)
+		}
 
 		// AI search: filter through LLM if query provided.
 		if *aiSearch != "" {
@@ -842,7 +882,9 @@ func runAsk(args []string) {
 // runList handles the `sesh list` subcommand.
 func runList(args []string) {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
-	agentFilter := fs.String("agent", "", "Filter by agent name")
+	agentFilter := fs.String("agent", "", "Filter by agent name (fuzzy match)")
+	dirFilter := fs.String("dir", "", "Filter by directory path (fuzzy match)")
+	cwdFlag := fs.Bool("cwd", false, "Filter to current working directory")
 	since := fs.String("since", "", "Only show sessions since date (e.g. 'monday', '2026-04-01', '3d')")
 	limit := fs.Int("n", 0, "Maximum number of sessions to show")
 	fs.Usage = func() {
@@ -851,6 +893,8 @@ func runList(args []string) {
 		fmt.Fprintf(os.Stderr, "Examples:\n")
 		fmt.Fprintf(os.Stderr, "  sesh list                    # all sessions\n")
 		fmt.Fprintf(os.Stderr, "  sesh list --agent opencode   # only OpenCode\n")
+		fmt.Fprintf(os.Stderr, "  sesh list --cwd              # sessions for current directory\n")
+		fmt.Fprintf(os.Stderr, "  sesh list --dir ~/projects   # sessions matching a directory\n")
 		fmt.Fprintf(os.Stderr, "  sesh list --since monday     # since Monday\n")
 		fmt.Fprintf(os.Stderr, "  sesh list -n 20              # last 20 sessions\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
@@ -858,17 +902,50 @@ func runList(args []string) {
 	}
 	fs.Parse(args)
 
+	// Validate --dir and --cwd are mutually exclusive.
+	if *dirFilter != "" && *cwdFlag {
+		fmt.Fprintf(os.Stderr, "sesh: --dir and --cwd are mutually exclusive\n")
+		os.Exit(1)
+	}
+
+	// Resolve --cwd to --dir.
+	if *cwdFlag {
+		cwd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "sesh: failed to get working directory: %v\n", err)
+			os.Exit(1)
+		}
+		*dirFilter = cwd
+	}
+
+	// Resolve --dir to an absolute, cleaned path.
+	if *dirFilter != "" {
+		resolved, err := tui.ResolveDir(*dirFilter)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "sesh: failed to resolve directory %q: %v\n", *dirFilter, err)
+			os.Exit(1)
+		}
+		*dirFilter = resolved
+	}
+
 	cfg := loadConfig()
 	providers := buildProviders(cfg)
 	cache := summary.NewCache()
 	ctx := context.Background()
 
-	all := collectSessions(ctx, providers, *agentFilter)
+	all := collectSessions(ctx, providers, "")
 	applySummaries(all, cache)
 
 	sort.Slice(all, func(i, j int) bool {
 		return all[i].LastUsed.After(all[j].LastUsed)
 	})
+
+	// Apply structured filters (agent, dir) via the query system.
+	if *agentFilter != "" || *dirFilter != "" {
+		query := tui.BuildPrefixQuery(*dirFilter, *agentFilter, "")
+		pq := tui.ParseQuery(query)
+		all = tui.FilterSessions(all, pq)
+	}
 
 	// Apply time filter.
 	if *since != "" {
