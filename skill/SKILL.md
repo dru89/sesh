@@ -19,6 +19,7 @@ sesh list [options]
 ```
 Options:
 - `--cwd` -- filter to sessions in the current working directory
+- `--repo` -- filter to sessions in the current git repository (resolves to repo root)
 - `--dir <path>` -- filter by directory (absolute path for exact match, bare word for fuzzy)
 - `--agent <name>` -- filter by agent name (fuzzy match)
 - `--since <date>` -- only sessions since a date (e.g. `monday`, `2026-04-01`, `3d`)
@@ -65,9 +66,14 @@ sesh recap --days 7 # LLM-generated summary of recent work
 - User asks "what have I been working on?" (use `sesh list --since` or `sesh recap`)
 - User references a past conversation and wants to pull in context
 
-## CWD context
+## CWD and repo context
 
-When the user says any of the following, they mean sessions whose directory matches the current working directory. Use `--cwd` to filter:
+**`--repo` vs `--cwd` vs `--dir`:**
+- `--repo` resolves to the git repository root, regardless of which subdirectory the user is in. Use this when the user says "in this project", "in this repo", "here", or "for this codebase". This is the most common filter for project-scoped queries.
+- `--cwd` uses the literal current working directory. Use this only when the user specifically means "in this exact directory" (rare).
+- `--dir <path>` filters by a specific path or fuzzy term. Use when the user names a specific project or path.
+
+When the user says any of the following, use `--repo`:
 
 - "in this project" / "in this repo" / "in this directory" / "in this folder"
 - "here" (when referring to past sessions)
@@ -76,7 +82,7 @@ When the user says any of the following, they mean sessions whose directory matc
 
 When the user says "in <project name>" or references a specific path, use `--dir <path>` instead.
 
-If the user's question is clearly about work across all projects (e.g. "what have I been working on this week?"), don't add `--cwd` — search everything.
+If the user's question is clearly about work across all projects (e.g. "what have I been working on this week?"), don't add any directory filter — search everything.
 
 ## Workflows
 
@@ -84,7 +90,7 @@ If the user's question is clearly about work across all projects (e.g. "what hav
 
 When the user asks to find a session about a specific topic:
 
-1. Start with `sesh --json --cwd` if the user is asking about work in the current project, or `sesh --json` for all sessions
+1. Start with `sesh --json --repo` if the user is asking about work in the current project, or `sesh --json` for all sessions
 2. Parse the JSON and scan summaries/titles for relevance
 3. If the initial list is too broad, narrow with `--dir`, `--agent`, or `--since`
 4. Present the top candidates to the user with session ID, title/summary, agent, directory, and relative time
@@ -105,9 +111,10 @@ When the user wants to recall what was discussed or decided:
 When the user wants to know what sessions exist for a project:
 
 ```bash
-sesh list --cwd              # current directory
-sesh list --dir ~/projects   # fuzzy match on directory
-sesh list --cwd --since 3d   # recent sessions here
+sesh list --repo              # current git repository
+sesh list --cwd               # current directory (exact)
+sesh list --dir ~/projects    # fuzzy match on directory
+sesh list --repo --since 3d   # recent sessions in this repo
 ```
 
 ### Searching across all sessions
@@ -125,7 +132,8 @@ sesh --json | # parse and filter by title/summary yourself
 
 ## Guidelines
 
-- Prefer `--cwd` when the user is asking about work in the current project, or when they say "here", "this repo", "this project", etc.
+- Prefer `--repo` when the user is asking about work in the current project, or when they say "here", "this repo", "this project", etc.
+- Use `--cwd` only when the user specifically means the exact current directory
 - Use `--json` output for programmatic filtering; use plain `sesh list` or `sesh show` for human-readable output shown directly to the user
 - Session IDs can be partial — `sesh show ses_abc` works if it's unambiguous
 - The `text` field from `sesh show --json` can be large for long sessions. Read it, extract what's relevant, and summarize rather than pasting the entire thing

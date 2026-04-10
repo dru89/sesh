@@ -381,3 +381,18 @@ func TestResolveDir(t *testing.T) {
 		}
 	})
 }
+
+func TestGitRoot(t *testing.T) {
+	// This test runs inside the sesh repo, so GitRoot should succeed
+	// and return an absolute path ending in "sesh".
+	root, err := GitRoot()
+	if err != nil {
+		t.Skipf("not in a git repo: %v", err)
+	}
+	if !filepath.IsAbs(root) {
+		t.Errorf("expected absolute path, got %q", root)
+	}
+	if filepath.Base(root) != "sesh" {
+		t.Errorf("expected repo root to end in 'sesh', got %q", root)
+	}
+}

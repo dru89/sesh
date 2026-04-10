@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -217,4 +218,15 @@ func ResolveDir(dir string) (string, error) {
 		dir = abs
 	}
 	return filepath.Clean(dir), nil
+}
+
+// GitRoot returns the root directory of the git repository containing the
+// current working directory. Returns an error if not inside a git repo.
+func GitRoot() (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("not inside a git repository")
+	}
+	return strings.TrimSpace(string(out)), nil
 }

@@ -305,7 +305,8 @@ func main() {
 	aiSearch := flag.String("ai-search", "", "AI-ranked search query (use with --json)")
 	agentFilter := flag.String("agent", "", "Filter by agent name (or use agent: in search)")
 	dirFilter := flag.String("dir", "", "Filter by directory path (or use dir: in search)")
-	cwdFlag := flag.Bool("cwd", false, "Filter to current working directory (shorthand for --dir .)")
+	cwdFlag := flag.Bool("cwd", false, "Filter to current working directory")
+	repoFlag := flag.Bool("repo", false, "Filter to the git repository root")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: sesh [options] [query]\n\n")
 		fmt.Fprintf(os.Stderr, "A unified session browser for coding agents.\n\n")
@@ -330,9 +331,19 @@ func main() {
 	}
 	flag.Parse()
 
-	// Validate --dir and --cwd are mutually exclusive.
-	if *dirFilter != "" && *cwdFlag {
-		fmt.Fprintf(os.Stderr, "sesh: --dir and --cwd are mutually exclusive\n")
+	// Validate --dir, --cwd, and --repo are mutually exclusive.
+	dirFlags := 0
+	if *dirFilter != "" {
+		dirFlags++
+	}
+	if *cwdFlag {
+		dirFlags++
+	}
+	if *repoFlag {
+		dirFlags++
+	}
+	if dirFlags > 1 {
+		fmt.Fprintf(os.Stderr, "sesh: --dir, --cwd, and --repo are mutually exclusive\n")
 		os.Exit(1)
 	}
 
@@ -344,6 +355,16 @@ func main() {
 			os.Exit(1)
 		}
 		*dirFilter = cwd
+	}
+
+	// Resolve --repo to --dir with the git repository root.
+	if *repoFlag {
+		root, err := tui.GitRoot()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "sesh: %v\n", err)
+			os.Exit(1)
+		}
+		*dirFilter = root
 	}
 
 	// Resolve --dir to an absolute, cleaned path.
@@ -885,6 +906,7 @@ func runList(args []string) {
 	agentFilter := fs.String("agent", "", "Filter by agent name (fuzzy match)")
 	dirFilter := fs.String("dir", "", "Filter by directory path (fuzzy match)")
 	cwdFlag := fs.Bool("cwd", false, "Filter to current working directory")
+	repoFlag := fs.Bool("repo", false, "Filter to the git repository root")
 	since := fs.String("since", "", "Only show sessions since date (e.g. 'monday', '2026-04-01', '3d')")
 	limit := fs.Int("n", 0, "Maximum number of sessions to show")
 	fs.Usage = func() {
@@ -893,6 +915,7 @@ func runList(args []string) {
 		fmt.Fprintf(os.Stderr, "Examples:\n")
 		fmt.Fprintf(os.Stderr, "  sesh list                    # all sessions\n")
 		fmt.Fprintf(os.Stderr, "  sesh list --agent opencode   # only OpenCode\n")
+		fmt.Fprintf(os.Stderr, "  sesh list --repo             # sessions for this git repo\n")
 		fmt.Fprintf(os.Stderr, "  sesh list --cwd              # sessions for current directory\n")
 		fmt.Fprintf(os.Stderr, "  sesh list --dir ~/projects   # sessions matching a directory\n")
 		fmt.Fprintf(os.Stderr, "  sesh list --since monday     # since Monday\n")
@@ -902,9 +925,19 @@ func runList(args []string) {
 	}
 	fs.Parse(args)
 
-	// Validate --dir and --cwd are mutually exclusive.
-	if *dirFilter != "" && *cwdFlag {
-		fmt.Fprintf(os.Stderr, "sesh: --dir and --cwd are mutually exclusive\n")
+	// Validate --dir, --cwd, and --repo are mutually exclusive.
+	dirFlags := 0
+	if *dirFilter != "" {
+		dirFlags++
+	}
+	if *cwdFlag {
+		dirFlags++
+	}
+	if *repoFlag {
+		dirFlags++
+	}
+	if dirFlags > 1 {
+		fmt.Fprintf(os.Stderr, "sesh: --dir, --cwd, and --repo are mutually exclusive\n")
 		os.Exit(1)
 	}
 
@@ -916,6 +949,16 @@ func runList(args []string) {
 			os.Exit(1)
 		}
 		*dirFilter = cwd
+	}
+
+	// Resolve --repo to --dir with the git repository root.
+	if *repoFlag {
+		root, err := tui.GitRoot()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "sesh: %v\n", err)
+			os.Exit(1)
+		}
+		*dirFilter = root
 	}
 
 	// Resolve --dir to an absolute, cleaned path.
