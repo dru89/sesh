@@ -9,7 +9,7 @@ A unified session browser for coding agents. Search across OpenCode, Claude Code
 ### Homebrew (macOS/Linux)
 
 ```bash
-brew install dru89/tap/sesh
+brew install --cask dru89/tap/sesh
 ```
 
 ### Other methods
