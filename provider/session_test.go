@@ -68,6 +68,26 @@ func TestOpenCodeExcludesArchived(t *testing.T) {
 	}
 }
 
+func TestOpenCodeExcludesSubagentSessions(t *testing.T) {
+	dbPath := createTestOpenCodeDB(t)
+	oc := &OpenCode{dbPath: dbPath}
+
+	sessions, err := oc.ListSessions(context.Background())
+	if err != nil {
+		t.Fatalf("ListSessions failed: %v", err)
+	}
+
+	// Should only include top-level sessions (ses_newer, ses_older), not ses_subagent.
+	if len(sessions) != 2 {
+		t.Fatalf("expected 2 sessions (subagent excluded), got %d", len(sessions))
+	}
+	for _, s := range sessions {
+		if s.ID == "ses_subagent" {
+			t.Error("subagent session should not be included in results")
+		}
+	}
+}
+
 func TestOpenCodeMissingDB(t *testing.T) {
 	oc := &OpenCode{dbPath: "/nonexistent/path/opencode.db"}
 	sessions, err := oc.ListSessions(context.Background())
@@ -140,6 +160,7 @@ func createTestOpenCodeDB(t *testing.T) string {
 		`CREATE TABLE session (
 			id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL DEFAULT 'global',
+			parent_id TEXT,
 			slug TEXT NOT NULL DEFAULT '',
 			directory TEXT NOT NULL DEFAULT '',
 			title TEXT NOT NULL DEFAULT '',
@@ -177,6 +198,10 @@ func createTestOpenCodeDB(t *testing.T) string {
 		"ses_newer", "Fix auth middleware", "eager-cactus", "/home/user/project", now-1000, now)
 	db.Exec(`INSERT INTO session (id, title, slug, directory, time_created, time_updated) VALUES (?, ?, ?, ?, ?, ?)`,
 		"ses_older", "Refactor tests", "bold-tiger", "/home/user/tests", older-1000, older)
+
+	// Insert a subagent session (has parent_id set).
+	db.Exec(`INSERT INTO session (id, parent_id, title, slug, directory, time_created, time_updated) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"ses_subagent", "ses_newer", "Explore codebase (@explore subagent)", "silent-rocket", "/home/user/project", now-800, now-700)
 
 	// Insert a user message + text part for ses_newer.
 	msgData, _ := json.Marshal(map[string]string{"role": "user"})

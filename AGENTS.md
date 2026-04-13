@@ -79,6 +79,7 @@ Rules for the script:
 - Exit 0 on success, non-zero on failure
 - Output `[]` if no sessions exist
 - Only JSON goes to stdout; warnings and errors go to stderr
+- Exclude subagent/child sessions — only return top-level sessions a user would resume directly. Many agents spawn background sessions for subtasks (e.g., explore or code-review subagents). These shouldn't appear in the picker.
 
 ### 2. A config entry
 

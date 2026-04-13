@@ -60,6 +60,7 @@ func (o *OpenCode) ListSessions(ctx context.Context) ([]Session, error) {
 		SELECT s.id, s.title, s.slug, s.directory, s.time_created, s.time_updated
 		FROM session s
 		WHERE s.time_archived IS NULL
+		  AND s.parent_id IS NULL
 		ORDER BY s.time_updated DESC
 	`)
 	if err != nil {
