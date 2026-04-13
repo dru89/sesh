@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/dru89/sesh/provider"
@@ -136,9 +137,15 @@ func (f fieldSource) String(i int) string { return f.field(f.sessions[i]) }
 func (f fieldSource) Len() int            { return len(f.sessions) }
 
 // fuzzyFilterField returns sessions whose field value fuzzy-matches the query.
+// The result preserves the input order (i.e. sorted by original index, not
+// by fuzzy match score) so that callers' sort order is maintained.
 func fuzzyFilterField(sessions []provider.Session, query string, field func(provider.Session) string) []provider.Session {
 	source := fieldSource{sessions: sessions, field: field}
 	matches := fuzzy.FindFrom(query, source)
+	// Sort matches by original index to preserve input order.
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].Index < matches[j].Index
+	})
 	result := make([]provider.Session, len(matches))
 	for i, match := range matches {
 		result[i] = sessions[match.Index]

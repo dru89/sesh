@@ -189,11 +189,14 @@ Each section accepts an optional `prompt` field to override the default:
 
 ```bash
 sesh                          # open the fuzzy picker (tab for detail pane)
+sesh --since 1d --repo        # picker filtered to today's sessions in this repo
 sesh list                     # non-interactive session list
+sesh list --since 3d -n 5     # last 5 sessions from the past 3 days
 sesh show <session-id>        # session details (partial ID works)
 sesh stats                    # session statistics
 sesh index                    # generate titles for all sessions (run once)
 sesh ask "what did I do?"     # natural language query
 sesh recap --days 7           # weekly recap
 sesh --json                   # JSON output for scripts/Raycast
+sesh --json --repo --since 1d # JSON output filtered by repo and time
 ```

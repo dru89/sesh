@@ -307,6 +307,8 @@ func main() {
 	dirFilter := flag.String("dir", "", "Filter by directory path (or use dir: in search)")
 	cwdFlag := flag.Bool("cwd", false, "Filter to current working directory")
 	repoFlag := flag.Bool("repo", false, "Filter to the git repository root")
+	since := flag.String("since", "", "Only show sessions since date (e.g. 'monday', '2026-04-01', '3d')")
+	limit := flag.Int("n", 0, "Maximum number of sessions to show")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: sesh [options] [query]\n\n")
 		fmt.Fprintf(os.Stderr, "A unified session browser for coding agents.\n\n")
@@ -396,6 +398,23 @@ func main() {
 	sort.Slice(all, func(i, j int) bool {
 		return all[i].LastUsed.After(all[j].LastUsed)
 	})
+
+	// Apply time filter.
+	if *since != "" {
+		cutoff := parseDateish(*since, time.Now())
+		filtered := all[:0]
+		for _, s := range all {
+			if s.LastUsed.After(cutoff) || s.LastUsed.Equal(cutoff) {
+				filtered = append(filtered, s)
+			}
+		}
+		all = filtered
+	}
+
+	// Apply limit.
+	if *limit > 0 && *limit < len(all) {
+		all = all[:*limit]
+	}
 
 	// JSON mode: dump and exit.
 	if *jsonMode {
