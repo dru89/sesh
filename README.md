@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="icon.png" alt="sesh" width="128">
+</p>
+
 # sesh
 
 A unified session browser for coding agents. Search across OpenCode, Claude Code, and any other agent with a single fuzzy picker, then resume directly into the session.
