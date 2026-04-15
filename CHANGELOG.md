@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-04-15
+
+- Add `sesh resume` command for direct session resumption by ID (partial ID works)
+- Add 500ms debounce to AI fallback search in TUI picker to avoid wasted LLM calls while typing
+- Add page-up/page-down navigation in TUI picker
+- Unify AI filter logic across `sesh ask`, `--ai-search`, and TUI fallback — all callers now share the same richer prompt with date and SearchText
+- Validate external provider session fields: skip sessions with empty id, warn on missing title or unparseable timestamps
+- Add OG/social card image
+
 ## [0.13.0] - 2026-04-15
 
 - Improve `sesh ask` with smart bookend excerpting — include ~5K chars from the start and end of each conversation, splitting at message boundaries instead of hard truncation
@@ -99,7 +108,8 @@ Initial release.
 - LLM fallback chains across subcommands
 - Shell wrapper for in-shell session resumption
 
-[Unreleased]: https://github.com/dru89/sesh/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/dru89/sesh/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/dru89/sesh/compare/v0.13.0...v1.0.0
 [0.13.0]: https://github.com/dru89/sesh/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/dru89/sesh/compare/v0.11.4...v0.12.0
 [0.11.4]: https://github.com/dru89/sesh/compare/v0.11.0...v0.11.4
