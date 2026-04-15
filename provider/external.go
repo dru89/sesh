@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -58,7 +59,23 @@ func (e *External) ListSessions(ctx context.Context) ([]Session, error) {
 	}
 
 	var sessions []Session
-	for _, r := range raw {
+	for i, r := range raw {
+		if r.ID == "" {
+			fmt.Fprintf(os.Stderr, "sesh: warning: %s: session %d has no id, skipping\n", e.config.Name, i)
+			continue
+		}
+		if r.Title == "" {
+			fmt.Fprintf(os.Stderr, "sesh: warning: %s: session %q has no title\n", e.config.Name, r.ID)
+		}
+		created := parseFlexTime(r.Created)
+		lastUsed := parseFlexTime(r.LastUsed)
+		if created.IsZero() {
+			fmt.Fprintf(os.Stderr, "sesh: warning: %s: session %q has invalid or missing created timestamp\n", e.config.Name, r.ID)
+		}
+		if lastUsed.IsZero() {
+			fmt.Fprintf(os.Stderr, "sesh: warning: %s: session %q has invalid or missing last_used timestamp\n", e.config.Name, r.ID)
+		}
+
 		searchParts := []string{r.Title, r.Slug, r.Directory, r.Text}
 		if r.Text != "" {
 			e.textCache[r.ID] = r.Text
@@ -68,8 +85,8 @@ func (e *External) ListSessions(ctx context.Context) ([]Session, error) {
 			ID:         r.ID,
 			Title:      r.Title,
 			Slug:       r.Slug,
-			Created:    parseFlexTime(r.Created),
-			LastUsed:   parseFlexTime(r.LastUsed),
+			Created:    created,
+			LastUsed:   lastUsed,
 			Directory:  r.Directory,
 			SearchText: strings.Join(searchParts, " "),
 		})
