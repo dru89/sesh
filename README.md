@@ -59,6 +59,7 @@ sesh --json             # dump all sessions as JSON (for Raycast, scripts, etc.)
 sesh list               # non-interactive session list
 sesh list --since monday -n 20
 sesh show ses_abc       # show details for a session (partial ID works)
+sesh resume ses_abc     # resume a session directly (partial ID works)
 sesh stats              # session statistics across all agents
 sesh index              # generate summaries for all sessions
 sesh index --agent omp  # generate summaries for one agent only

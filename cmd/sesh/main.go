@@ -289,6 +289,9 @@ func main() {
 		case "show":
 			runShow(os.Args[2:])
 			return
+		case "resume":
+			runResume(os.Args[2:])
+			return
 		case "stats":
 			runStats(os.Args[2:])
 			return
@@ -1173,6 +1176,60 @@ func runShow(args []string) {
 				fmt.Println(text)
 			}
 		}
+	}
+}
+
+// runResume handles the `sesh resume` subcommand.
+func runResume(args []string) {
+	fs := flag.NewFlagSet("resume", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: sesh resume <session-id>\n\n")
+		fmt.Fprintf(os.Stderr, "Resume a session by ID (partial ID works).\n\n")
+		fmt.Fprintf(os.Stderr, "Examples:\n")
+		fmt.Fprintf(os.Stderr, "  sesh resume ses_abc123\n")
+		fmt.Fprintf(os.Stderr, "  sesh resume abc\n")
+	}
+	fs.Parse(args)
+
+	if fs.NArg() == 0 {
+		fs.Usage()
+		os.Exit(1)
+	}
+	query := fs.Arg(0)
+
+	cfg := loadConfig()
+	providers := buildProviders(cfg)
+	cache := summary.NewCache()
+	ctx := context.Background()
+
+	all := collectSessions(ctx, providers, "")
+	applySummaries(all, cache)
+
+	s, candidates := findSession(all, query)
+	if s == nil && candidates == nil {
+		fmt.Fprintf(os.Stderr, "sesh: no session matching %q\n", query)
+		os.Exit(1)
+	}
+	if s == nil {
+		fmt.Fprintf(os.Stderr, "sesh: ambiguous session ID %q — matches %d sessions:\n", query, len(candidates))
+		for _, c := range candidates {
+			fmt.Fprintf(os.Stderr, "  %s  %s  %s\n", c.ID, c.Agent, c.DisplayTitle())
+		}
+		os.Exit(1)
+	}
+
+	providerMap := providersByName(providers)
+	p, ok := providerMap[s.Agent]
+	if !ok {
+		fmt.Fprintf(os.Stderr, "sesh: unknown provider %q\n", s.Agent)
+		os.Exit(1)
+	}
+
+	cmd := p.ResumeCommand(*s)
+	if os.Getenv("SESH_WRAPPER") != "" {
+		fmt.Println("__sesh_eval:" + cmd)
+	} else {
+		fmt.Println(cmd)
 	}
 }
 
