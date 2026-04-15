@@ -2,11 +2,18 @@
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-04-15
+
+- Improve `sesh ask` with smart bookend excerpting — include ~5K chars from the start and end of each conversation, splitting at message boundaries instead of hard truncation
+- Regenerate stale summaries before `sesh ask` filtering so resumed sessions have current titles
+- Include first few user prompts in `sesh ask` pass 1 for better session relevance filtering
 - Add 30-second timeout for provider list commands to prevent hung external scripts from blocking sesh
-- Replace lipgloss pseudo-version with tagged v1.1.0 (downgrade glamour to v0.9.1)
 - Add SHA256 checksum verification when downloading updates via `sesh update`
-- Update CI workflows to Go 1.25
-- Include LICENSE in release archives
+- Single-line progress indicator for `sesh index` with red error highlighting
+- Replace lipgloss pseudo-version with tagged v1.1.0 (downgrade glamour to v0.9.1)
+- Add app icon for repo and Raycast extension
+- Add CHANGELOG.md, conventional commit guidelines, release process docs
+- Update CI workflows to Go 1.25; include LICENSE in release archives
 
 ## [0.12.0] - 2026-04-15
 
@@ -92,7 +99,8 @@ Initial release.
 - LLM fallback chains across subcommands
 - Shell wrapper for in-shell session resumption
 
-[Unreleased]: https://github.com/dru89/sesh/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/dru89/sesh/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/dru89/sesh/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/dru89/sesh/compare/v0.11.4...v0.12.0
 [0.11.4]: https://github.com/dru89/sesh/compare/v0.11.0...v0.11.4
 [0.11.0]: https://github.com/dru89/sesh/compare/v0.10.0...v0.11.0
