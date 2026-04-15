@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -61,6 +62,17 @@ type fallbackResultMsg struct {
 	sessions []provider.Session
 }
 
+// fallbackDebounceMsg is sent after the debounce delay to trigger AI fallback.
+// The seq field is checked against the model's current debounce sequence to
+// discard stale ticks (i.e., the user kept typing).
+type fallbackDebounceMsg struct {
+	seq int
+}
+
+// fallbackDebounceDelay is how long to wait after the last keystroke before
+// triggering the AI fallback search.
+const fallbackDebounceDelay = 500 * time.Millisecond
+
 // --- Model ---
 
 type model struct {
@@ -80,6 +92,7 @@ type model struct {
 	showDetail     bool   // true when detail pane is visible
 	sessionText    SessionTextFunc
 	detailCache    map[string]string // agent:id -> text
+	debounceSeq    int               // incremented on each query change; used to discard stale debounce ticks
 }
 
 func newModel(sessions []provider.Session, opts PickOptions) model {
@@ -134,6 +147,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case fallbackDebounceMsg:
+		// Stale tick — the user typed more since this was scheduled.
+		if msg.seq != m.debounceSeq {
+			return m, nil
+		}
+		// Query still matches; fire the AI fallback.
+		if len(m.filtered) == 0 && m.fallbackSearch != nil {
+			freeText := ParseQuery(m.query).Text
+			if freeText == "" {
+				freeText = m.query
+			}
+			if len(freeText) >= 3 {
+				m.searching = true
+				all := m.all
+				fn := m.fallbackSearch
+				ctx := m.fallbackCtx
+				return m, func() tea.Msg {
+					results := fn(ctx, freeText, all)
+					return fallbackResultMsg{sessions: results}
+				}
+			}
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		// Intercept keys used for list navigation and special actions.
 		// Everything else is forwarded to the textinput component.
@@ -167,6 +204,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyDown:
 			if m.cursor < len(m.filtered)-1 {
 				m.cursor++
+			}
+			return m, nil
+
+		case tea.KeyPgUp:
+			pageSize := m.pageSize()
+			m.cursor -= pageSize
+			if m.cursor < 0 {
+				m.cursor = 0
+			}
+			return m, nil
+
+		case tea.KeyPgDown:
+			pageSize := m.pageSize()
+			m.cursor += pageSize
+			if m.cursor >= len(m.filtered) {
+				m.cursor = len(m.filtered) - 1
+			}
+			if m.cursor < 0 {
+				m.cursor = 0
 			}
 			return m, nil
 
@@ -206,10 +262,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // filterWithFallback runs structured + fuzzy search, and if it returns no
-// results and a fallback is configured, kicks off an async AI search.
+// results and a fallback is configured, schedules a debounced AI search.
 func (m *model) filterWithFallback() tea.Cmd {
 	m.searchMode = "fuzzy"
 	m.searching = false
+	m.debounceSeq++ // invalidate any pending debounce tick
 
 	if m.query == "" {
 		m.filtered = m.all
@@ -221,21 +278,18 @@ func (m *model) filterWithFallback() tea.Cmd {
 	m.filtered = FilterSessions(m.all, pq)
 	m.clampCursor()
 
-	// If filtering found nothing and we have a fallback, trigger it.
-	// Only use the freeform text portion for the AI query.
+	// If filtering found nothing and we have a fallback, schedule a debounced
+	// AI search. The delay avoids firing LLM calls on every keystroke while
+	// the user is still typing.
 	freeText := pq.Text
 	if freeText == "" {
 		freeText = m.query
 	}
 	if len(m.filtered) == 0 && m.fallbackSearch != nil && len(freeText) >= 3 {
-		m.searching = true
-		all := m.all
-		fn := m.fallbackSearch
-		ctx := m.fallbackCtx
-		return func() tea.Msg {
-			results := fn(ctx, freeText, all)
-			return fallbackResultMsg{sessions: results}
-		}
+		seq := m.debounceSeq
+		return tea.Tick(fallbackDebounceDelay, func(time.Time) tea.Msg {
+			return fallbackDebounceMsg{seq: seq}
+		})
 	}
 
 	return nil
@@ -259,6 +313,16 @@ func (m *model) clampCursor() {
 			m.cursor = 0
 		}
 	}
+}
+
+// pageSize returns the number of visible list rows, used for page-up/page-down.
+func (m model) pageSize() int {
+	// Height minus 2 for the input line and the count/help bar.
+	size := m.height - 2
+	if size < 1 {
+		size = 1
+	}
+	return size
 }
 
 // --- Styles ---
