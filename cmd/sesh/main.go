@@ -319,6 +319,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  init     Output shell wrapper for your shell\n")
 		fmt.Fprintf(os.Stderr, "  list     List sessions (non-interactive)\n")
 		fmt.Fprintf(os.Stderr, "  show     Show details for a session\n")
+		fmt.Fprintf(os.Stderr, "  resume   Resume a session by ID\n")
 		fmt.Fprintf(os.Stderr, "  stats    Show session statistics\n")
 		fmt.Fprintf(os.Stderr, "  index    Generate summaries for all sessions\n")
 		fmt.Fprintf(os.Stderr, "  recap    Summarize what you worked on over a time period\n")
