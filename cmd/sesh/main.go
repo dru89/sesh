@@ -20,6 +20,7 @@ import (
 	"github.com/dru89/sesh/summary"
 	"github.com/dru89/sesh/tui"
 	"github.com/dru89/sesh/update"
+	"golang.org/x/term"
 )
 
 // version and commit are set at build time via ldflags.
@@ -764,8 +765,19 @@ func runAsk(args []string) {
 
 	question := strings.Join(fs.Args(), " ")
 	if question == "" {
-		fs.Usage()
-		os.Exit(1)
+		if !term.IsTerminal(int(os.Stdin.Fd())) {
+			fs.Usage()
+			os.Exit(1)
+		}
+		var err error
+		question, err = tui.PromptInput("Ask:")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "sesh: %v\n", err)
+			os.Exit(1)
+		}
+		if question == "" {
+			os.Exit(0)
+		}
 	}
 
 	cfg := loadConfig()
@@ -837,7 +849,6 @@ func runAsk(args []string) {
 		}
 		stale := cache.NeedsSummary(refs)
 		if len(stale) > 0 {
-			fmt.Fprintf(os.Stderr, "Updating %d stale summaries...\n", len(stale))
 			gen := summary.NewGenerator(sumCfg)
 			var items []summary.BatchItem
 			for _, ref := range stale {
@@ -859,6 +870,7 @@ func runAsk(args []string) {
 				}
 			}
 			if len(items) > 0 {
+				fmt.Fprintf(os.Stderr, "Updating %d stale summaries...", len(items))
 				gen.GenerateBatch(ctx, items, cache, func(i, total int, id string, err error) {
 					if err != nil {
 						fmt.Fprintf(os.Stderr, "\r\033[K\033[31m  [%d/%d] %s: %v\033[0m\n", i, total, id, err)
@@ -894,14 +906,13 @@ func runAsk(args []string) {
 	for _, s := range relevant {
 		title := s.DisplayTitle()
 		when := s.LastUsed.Format("Mon Jan 2 3:04pm")
-		resumeCmd := ""
+		relWhen := provider.RelativeTime(s.LastUsed)
 		var sessionText string
 		if p, ok := providerMap2[s.Agent]; ok {
-			resumeCmd = p.ResumeCommand(s)
 			sessionText = provider.ExcerptBookends(p.SessionText(ctx, s.ID), 5000)
 		}
-		detailList.WriteString(fmt.Sprintf("- [%s] %s | %s | %s | id: %s | resume: `%s`\n",
-			s.Agent, title, s.Directory, when, s.ID, resumeCmd))
+		detailList.WriteString(fmt.Sprintf("- [%s] %s | %s | %s (%s) | id: %s | resume: `sesh resume %s`\n",
+			s.Agent, title, s.Directory, when, relWhen, s.ID, s.ID))
 		if sessionText != "" {
 			detailList.WriteString(fmt.Sprintf("  Conversation excerpt:\n  %s\n",
 				strings.ReplaceAll(sessionText, "\n", "\n  ")))
@@ -911,12 +922,16 @@ func runAsk(args []string) {
 	answerPrompt := fmt.Sprintf(
 		"Here are my coding agent sessions relevant to my question. "+
 			"Each session has the agent name, session summary/title, working directory, "+
-			"date, session ID, resume command, and an excerpt from the conversation.\n\n"+
+			"date (with relative time), session ID, resume command, and an excerpt from the conversation.\n\n"+
 			"%s\n"+
 			"My question: %s\n\n"+
-			"Answer my question based on these sessions. Be specific about what was worked on. "+
-			"Always include the session ID and the resume command (as a code block) "+
-			"for each session you reference, so I can easily resume it.",
+			"Answer my question based on these sessions. Be specific about what was worked on.\n\n"+
+			"When referencing a session, use exactly this format:\n\n"+
+			"### Session title here\n"+
+			"[agent] · 3 days ago (Wed Apr 15 4:30pm)\n\n"+
+			"```\nsesh resume ses_abc123\n```\n\n"+
+			"Description of what was worked on...\n\n"+
+			"Use a horizontal rule (---) between sessions if you reference more than one.",
 		detailList.String(), question)
 
 	result, err := summary.RunLLM(ctx, askCmd, askEnv, answerPrompt, 60*time.Second)
