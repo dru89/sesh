@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-04-27
+
 - Add `system_prompt` config field for role-framing LLM calls — prevents models from "responding to" session transcripts instead of summarizing them
 - Add `{{TRANSCRIPT}}` template variable support in custom prompts for precise control over transcript placement
 - Rewrite all default prompts with anti-response guardrails (role framing, explicit "do not engage" instructions, structured output constraints)
@@ -117,7 +119,8 @@ Initial release.
 - LLM fallback chains across subcommands
 - Shell wrapper for in-shell session resumption
 
-[Unreleased]: https://github.com/dru89/sesh/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/dru89/sesh/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/dru89/sesh/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/dru89/sesh/compare/v0.13.0...v1.0.0
 [0.13.0]: https://github.com/dru89/sesh/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/dru89/sesh/compare/v0.11.4...v0.12.0
