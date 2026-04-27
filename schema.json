@@ -27,9 +27,13 @@
           "$ref": "#/$defs/command",
           "description": "Command for prose answer generation (pass 2). Fallback: ask -> recap -> index."
         },
+        "system_prompt": {
+          "type": "string",
+          "description": "Role-framing context that tells the LLM what role to adopt. Prepended before the transcript and task prompt. Use this to prevent the model from engaging with session content as if it were a conversation."
+        },
         "prompt": {
           "type": "string",
-          "description": "Custom prompt for answer generation."
+          "description": "Custom task prompt for answer generation. Use {{TRANSCRIPT}} to control where session data is inserted."
         },
         "env": {
           "$ref": "#/$defs/env",
@@ -84,9 +88,13 @@
         "command": {
           "$ref": "#/$defs/command"
         },
+        "system_prompt": {
+          "type": "string",
+          "description": "Role-framing context that tells the LLM what role to adopt. Prepended before the transcript and task prompt. Use this to prevent the model from engaging with session content as if it were a conversation."
+        },
         "prompt": {
           "type": "string",
-          "description": "Custom prompt to override the default."
+          "description": "Custom task prompt to override the default. Use {{TRANSCRIPT}} to control where session data is inserted; otherwise it is placed between the system prompt and task prompt."
         },
         "env": {
           "$ref": "#/$defs/env",

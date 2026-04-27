@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+- Add `system_prompt` config field for role-framing LLM calls — prevents models from "responding to" session transcripts instead of summarizing them
+- Add `{{TRANSCRIPT}}` template variable support in custom prompts for precise control over transcript placement
+- Rewrite all default prompts with anti-response guardrails (role framing, explicit "do not engage" instructions, structured output constraints)
+- Wire up `ask.prompt`, `ask.system_prompt`, `recap.prompt`, and `recap.system_prompt` config fields (previously declared in schema but unused)
+- Add role framing to AI session filter prompt
+- Add interactive prompt for `sesh ask` when no question is provided
+- Add `resume` to help text command list
+- Consolidate CLAUDE.md into AGENTS.md
+
 ## [1.0.0] - 2026-04-15
 
 - Add `sesh resume` command for direct session resumption by ID (partial ID works)

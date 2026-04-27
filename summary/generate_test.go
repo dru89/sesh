@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -188,6 +189,93 @@ func TestGenerateBatchPartialFailure(t *testing.T) {
 	}
 	if cache.Len() != 2 {
 		t.Errorf("expected 2 cached, got %d", cache.Len())
+	}
+}
+
+func TestBuildPrompt(t *testing.T) {
+	t.Run("all defaults", func(t *testing.T) {
+		got := BuildPrompt("", "", "default system", "default task", "the transcript")
+		want := "default system\n\n---\n\nthe transcript\n\n---\n\ndefault task"
+		if got != want {
+			t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
+		}
+	})
+
+	t.Run("custom system prompt replaces default", func(t *testing.T) {
+		got := BuildPrompt("custom system", "", "default system", "default task", "transcript")
+		if !strings.HasPrefix(got, "custom system\n") {
+			t.Errorf("expected custom system prefix, got:\n%s", got)
+		}
+		if strings.Contains(got, "default system") {
+			t.Error("default system should not appear when custom is set")
+		}
+	})
+
+	t.Run("custom prompt replaces default", func(t *testing.T) {
+		got := BuildPrompt("", "custom task", "default system", "default task", "transcript")
+		if !strings.Contains(got, "custom task") {
+			t.Error("expected custom task in output")
+		}
+		if strings.Contains(got, "default task") {
+			t.Error("default task should not appear when custom is set")
+		}
+	})
+
+	t.Run("both custom", func(t *testing.T) {
+		got := BuildPrompt("my system", "my task", "default system", "default task", "transcript")
+		want := "my system\n\n---\n\ntranscript\n\n---\n\nmy task"
+		if got != want {
+			t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
+		}
+	})
+
+	t.Run("template variable in prompt", func(t *testing.T) {
+		got := BuildPrompt("", "Here is the data: {{TRANSCRIPT}} Now label it.", "default system", "default task", "session data")
+		want := "default system\n\nHere is the data: session data Now label it."
+		if got != want {
+			t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
+		}
+	})
+
+	t.Run("template variable with custom system", func(t *testing.T) {
+		got := BuildPrompt("custom system", "Label: {{TRANSCRIPT}}", "default system", "default task", "text")
+		if !strings.HasPrefix(got, "custom system\n") {
+			t.Errorf("expected custom system prefix, got:\n%s", got)
+		}
+		if !strings.Contains(got, "Label: text") {
+			t.Errorf("expected expanded template, got:\n%s", got)
+		}
+		if strings.Contains(got, "{{TRANSCRIPT}}") {
+			t.Error("template variable should be expanded")
+		}
+	})
+
+	t.Run("no separator when using template variable", func(t *testing.T) {
+		got := BuildPrompt("", "Data: {{TRANSCRIPT}}", "sys", "task", "content")
+		if strings.Contains(got, "---") {
+			t.Errorf("should not contain --- separators in template mode, got:\n%s", got)
+		}
+	})
+}
+
+func TestGenerateWithSystemPrompt(t *testing.T) {
+	// Mock that echoes stdin so we can verify the prompt structure.
+	script := writeMockScript(t, "#!/bin/sh\ncat")
+
+	gen := NewGenerator(Config{
+		Command:      []string{script},
+		SystemPrompt: "You are a test assistant.",
+	})
+
+	result, err := gen.Generate(context.Background(), "hello")
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	if !strings.HasPrefix(result, "You are a test assistant.") {
+		t.Errorf("expected custom system prompt at start, got:\n%s", result)
+	}
+	if !strings.Contains(result, "hello") {
+		t.Error("expected transcript in output")
 	}
 }
 

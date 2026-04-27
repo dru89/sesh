@@ -251,20 +251,41 @@ Use a fast model for title generation and filtering, a heavier model for prose:
 {
   "index": {
     "command": ["llm", "-m", "haiku"],
-    "prompt": "Summarize this coding session in one sentence, under 20 words."
+    "system_prompt": "You are a session indexer. Output only a short label.",
+    "prompt": "Label this session in under 15 words."
   },
   "ask": {
     "command": ["llm", "-m", "sonnet"],
+    "system_prompt": "You are a session search assistant. Answer only from the provided data.",
     "prompt": "custom prompt for answer generation",
     "filter_command": ["llm", "-m", "haiku"]
   },
   "recap": {
     "command": ["llm", "-m", "sonnet"],
+    "system_prompt": "You are a work recap assistant. Summarize only the session data provided.",
     "prompt": "custom recap prompt"
   },
   "providers": { ... }
 }
 ```
+
+### Prompt structure
+
+Each LLM call assembles input from three parts: a **system prompt** (role framing), the **transcript/data**, and a **task prompt** (what to produce). The structure piped to stdin looks like:
+
+```
+[system_prompt]
+---
+[transcript / session data]
+---
+[prompt]
+```
+
+- `system_prompt` tells the model what role to adopt. The defaults prevent the model from trying to "help with" or "respond to" the session content — a common failure mode when LLMs see conversation transcripts.
+- `prompt` is the task-specific instruction (e.g., "label this session" or "write a recap").
+- If `prompt` contains `{{TRANSCRIPT}}`, the transcript is inserted at that location instead of between the separators. This gives full control over prompt layout.
+
+Both fields are optional. When omitted, sesh uses built-in defaults with anti-response guardrails.
 
 ### Fallback chains
 

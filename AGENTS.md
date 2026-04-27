@@ -146,16 +146,19 @@ Each subcommand falls back to the others if its own command isn't set, so config
 
 ### Custom prompts
 
-Each section accepts an optional `prompt` field to override the default:
+Each section accepts optional `system_prompt` and `prompt` fields. The `system_prompt` provides role framing (tells the model what it is), while `prompt` is the task instruction (tells the model what to do). Both override their respective defaults:
 
 ```json
 {
   "index": {
     "command": ["llm", "-m", "haiku"],
+    "system_prompt": "You are a session indexer for coding transcripts.",
     "prompt": "Describe this coding session in one sentence, under 15 words. Output only the description."
   }
 }
 ```
+
+The prompt structure piped to the LLM on stdin is: `[system_prompt] --- [transcript] --- [prompt]`. If `prompt` contains `{{TRANSCRIPT}}`, the transcript is inserted at that position instead of between separators.
 
 ## Full config example
 
@@ -316,7 +319,7 @@ The binary outputs a shell command string to stdout (`cd /path && agent --resume
 
 **Providers** (`providers`): Listed under built-in names (`opencode`, `claude`) to override resume commands or disable. Any other name is an external provider requiring `list_command`.
 
-**LLM commands** (`index`, `ask`, `recap`): Each subcommand has its own `command`, `prompt`, and `env` fields. `ask` also has `filter_command` for the classification pass. Each subcommand falls back through the others via a priority chain so you only need to configure one.
+**LLM commands** (`index`, `ask`, `recap`): Each subcommand has its own `command`, `system_prompt`, `prompt`, and `env` fields. `ask` also has `filter_command` for the classification pass. Each subcommand falls back through the others via a priority chain so you only need to configure one. The `system_prompt` field provides role-framing context (preventing the model from engaging with transcript content), while `prompt` is the task instruction. Both have sensible defaults with anti-response guardrails. Custom prompts can use `{{TRANSCRIPT}}` to control where session data is inserted.
 
 **Environment** (`env`): Top-level `env` map applies to all LLM commands. Per-command `env` overrides specific keys. Merge order: process env < top-level env < per-command env. Built by `buildEnv()` which starts from `os.Environ()` and overlays config values. Critical for Raycast/non-shell environments where AWS credentials aren't in the process environment.
 
@@ -326,7 +329,7 @@ Fallback chains (flat, no recursion):
 - `ask` (filter): ask.filter_command -> index -> ask -> recap
 - `recap`: recap -> ask -> index
 
-The `config` struct in main.go has methods `indexCommand()`, `askCommand()`, `askFilterCommand()`, `recapCommand()` that walk these chains via `resolveCommand()`. `summaryConfig()` builds a `summary.Config` from the resolved index command/prompt for the generator.
+The `config` struct in main.go has methods `indexCommand()`, `askCommand()`, `askFilterCommand()`, `recapCommand()` that walk these chains via `resolveCommand()`. Prompt resolution methods (`indexPrompt()`, `indexSystemPrompt()`, `recapPrompt()`, `recapSystemPrompt()`, `askPrompt()`, `askSystemPrompt()`) return the config value or empty string. `summaryConfig()` builds a `summary.Config` from the resolved index command/prompt/system_prompt for the generator. Recap and ask prompts are assembled in their respective `run` functions using `summary.BuildPrompt()`, which handles the system/transcript/task layering and `{{TRANSCRIPT}}` expansion.
 
 ### Data sources
 
@@ -369,7 +372,7 @@ Any executable that outputs `[{"id", "title", "created", "last_used", ...}]` to 
 #### Architecture
 
 - `summary/cache.go` — JSON-file-backed cache at `~/.cache/sesh/summaries.json`. Keyed by session ID. Staleness check: `last_used` has changed AND summary is >1 hour old (prevents re-summarizing active sessions on every run).
-- `summary/generate.go` — Shells out to user-configured command. Session text (user prompts) goes on stdin, summary comes out on stdout. 30-second per-summary timeout. Supports batch generation with progress callback.
+- `summary/generate.go` — Shells out to user-configured command. Session text (user prompts) goes on stdin, summary comes out on stdout. 30-second per-summary timeout. Supports batch generation with progress callback. All LLM prompts are assembled by `BuildPrompt()`, which layers a system prompt (role framing), transcript, and task prompt, with support for `{{TRANSCRIPT}}` template expansion in custom prompts.
 - `cmd/sesh/main.go` — Wires it together. `sesh index` for bulk generation. Normal `sesh` runs lazy background generation (up to 10 sessions) in a goroutine during the TUI picker.
 
 #### Provider.SessionText()

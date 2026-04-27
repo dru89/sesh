@@ -318,6 +318,75 @@ func TestSummaryConfig(t *testing.T) {
 			t.Errorf("expected FOO=bar, got %q", envMap["FOO"])
 		}
 	})
+
+	t.Run("with system_prompt", func(t *testing.T) {
+		cfg := config{
+			Index: commandConfig{
+				Command:      []string{"llm"},
+				SystemPrompt: "You are a custom indexer.",
+				Prompt:       "Label it.",
+			},
+		}
+		sc := cfg.summaryConfig()
+		if sc.SystemPrompt != "You are a custom indexer." {
+			t.Errorf("summaryConfig system_prompt = %q, want %q", sc.SystemPrompt, "You are a custom indexer.")
+		}
+		if sc.Prompt != "Label it." {
+			t.Errorf("summaryConfig prompt = %q, want %q", sc.Prompt, "Label it.")
+		}
+	})
+}
+
+func TestPromptResolution(t *testing.T) {
+	cfg := config{
+		Index: commandConfig{
+			SystemPrompt: "index system",
+			Prompt:       "index prompt",
+		},
+		Recap: commandConfig{
+			SystemPrompt: "recap system",
+			Prompt:       "recap prompt",
+		},
+		Ask: askConfig{
+			SystemPrompt: "ask system",
+			Prompt:       "ask prompt",
+		},
+	}
+
+	if cfg.indexPrompt() != "index prompt" {
+		t.Errorf("indexPrompt = %q", cfg.indexPrompt())
+	}
+	if cfg.indexSystemPrompt() != "index system" {
+		t.Errorf("indexSystemPrompt = %q", cfg.indexSystemPrompt())
+	}
+	if cfg.recapPrompt() != "recap prompt" {
+		t.Errorf("recapPrompt = %q", cfg.recapPrompt())
+	}
+	if cfg.recapSystemPrompt() != "recap system" {
+		t.Errorf("recapSystemPrompt = %q", cfg.recapSystemPrompt())
+	}
+	if cfg.askPrompt() != "ask prompt" {
+		t.Errorf("askPrompt = %q", cfg.askPrompt())
+	}
+	if cfg.askSystemPrompt() != "ask system" {
+		t.Errorf("askSystemPrompt = %q", cfg.askSystemPrompt())
+	}
+
+	t.Run("empty returns empty", func(t *testing.T) {
+		empty := config{}
+		if empty.indexPrompt() != "" {
+			t.Error("expected empty indexPrompt")
+		}
+		if empty.indexSystemPrompt() != "" {
+			t.Error("expected empty indexSystemPrompt")
+		}
+		if empty.recapPrompt() != "" {
+			t.Error("expected empty recapPrompt")
+		}
+		if empty.askPrompt() != "" {
+			t.Error("expected empty askPrompt")
+		}
+	})
 }
 
 // assertCmd checks that two string slices match.
