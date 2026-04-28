@@ -220,6 +220,14 @@ When making changes to sesh, always:
 3. **Update AGENTS.md** if internal architecture changes (new packages, data flows, design decisions) or if the setup process or config schema changes.
 4. **Update schema.json** if config fields are added or modified.
 5. **Run the CI check locally** (`go test ./... && go build ./cmd/sesh/`) before pushing.
+6. **Open a PR instead of pushing directly to main.** CI runs tests on both Ubuntu and Windows and enforces `gofmt` formatting — all three checks must pass before merging. Branch protection is enabled on main.
+7. **Use `internal/testhelper.WriteMockScript`** for any test that shells out to a script. It returns the right command array for the current OS — a `.sh` file on Unix, a PowerShell invocation on Windows. Never write a shell script inline in a test without it.
+
+To enable the pre-commit formatting hook locally:
+
+```bash
+git config core.hooksPath .githooks
+```
 
 ### Commit conventions
 
@@ -240,14 +248,24 @@ Breaking changes get a `!` suffix: `feat!: change config format`.
 
 ### Release process
 
-Releases are triggered by pushing a version tag. The process:
+Releases use a PR-based flow. Creating a `release/vX.Y.Z` branch and opening a PR against main is the only manual step — merging triggers everything else automatically.
 
 1. **Update CHANGELOG.md** — Move items from `[Unreleased]` to a new version section. Add the date. Update the comparison links at the bottom of the file.
-2. **Commit** — `git commit -am "chore: prepare release v0.13.0"`
-3. **Tag and push** — `git tag v0.13.0 && git push origin main --tags`
+2. **Commit, open a release PR, and enable auto-merge** — Branch name must match `release/vX.Y.Z` exactly.
+   ```bash
+   git checkout -b release/v1.2.0
+   git commit -am "chore: prepare release v1.2.0"
+   git push origin release/v1.2.0
+   gh pr create --title "chore: release v1.2.0" --base main
+   gh pr merge --auto --squash
+   ```
+   Auto-merge queues the PR to merge as soon as all required CI checks pass — no manual merge needed.
+3. **Wait for CI.** Once checks pass, GitHub merges the PR automatically. The `release-pr.yaml` workflow fires: it extracts the version from the branch name, runs tests, creates and pushes the `vX.Y.Z` tag, then runs GoReleaser directly.
 4. GoReleaser builds cross-platform binaries, publishes to GitHub Releases, and updates the Homebrew cask.
 
-When updating the changelog at release time, review `git log` since the last tag and write concise, user-facing descriptions. Group related changes. The auto-generated GoReleaser changelog covers commit-level detail on the GitHub release page; the CHANGELOG.md is the curated version.
+**Why not push the tag first?** GitHub Actions blocks workflows triggered by `GITHUB_TOKEN` from firing other workflows (loop prevention). The release-pr workflow runs GoReleaser itself rather than pushing a tag and waiting for `release.yaml` to fire. The existing `release.yaml` remains as an escape hatch for manually tagged releases.
+
+**Updating CHANGELOG.md is the agent's job, not the automation's.** Before opening the release PR, review `git log` since the last tag and write concise, user-facing descriptions. Group related changes. The auto-generated GoReleaser changelog covers commit-level detail on the GitHub release page; CHANGELOG.md is the curated, human-readable version.
 
 ### Project structure
 
