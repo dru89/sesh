@@ -24,7 +24,7 @@ function sesh {
     Remove-Item Env:\SESH_WRAPPER
     if ($LASTEXITCODE -ne 0) { return }
     if ($output -and $output.StartsWith('__sesh_eval:')) {
-        Invoke-Expression $output.Substring(13)
+        Invoke-Expression $output.Substring(12)
     } elseif ($output) {
         Write-Output $output
     }

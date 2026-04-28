@@ -1425,7 +1425,7 @@ func runInit(args []string) {
 		fmt.Fprintf(os.Stderr, "  bash:       eval \"$(sesh init bash)\"\n")
 		fmt.Fprintf(os.Stderr, "  zsh:        eval \"$(sesh init zsh)\"\n")
 		fmt.Fprintf(os.Stderr, "  fish:       sesh init fish | source\n")
-		fmt.Fprintf(os.Stderr, "  powershell: sesh init powershell | Invoke-Expression\n\n")
+		fmt.Fprintf(os.Stderr, "  powershell: sesh init powershell | Out-String | Invoke-Expression\n\n")
 		fmt.Fprintf(os.Stderr, "Or append to your rc file directly:\n")
 		fmt.Fprintf(os.Stderr, "  sesh init bash >> ~/.bashrc\n")
 		fmt.Fprintf(os.Stderr, "  sesh init zsh >> ~/.zshrc\n")
@@ -1550,7 +1550,7 @@ const initPowerShell = `function sesh {
     Remove-Item Env:\SESH_WRAPPER
     if ($LASTEXITCODE -ne 0) { return }
     if ($output -and $output.StartsWith('__sesh_eval:')) {
-        Invoke-Expression $output.Substring(13)
+        Invoke-Expression $output.Substring(12)
     } elseif ($output) {
         Write-Output $output
     }

@@ -35,7 +35,7 @@ sesh init fish | source
 
 ```powershell
 # PowerShell: add to $PROFILE
-sesh init powershell | Invoke-Expression
+sesh init powershell | Out-String | Invoke-Expression
 ```
 
 ## Configuration file

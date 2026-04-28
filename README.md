@@ -43,7 +43,7 @@ echo 'sesh init fish | source' >> ~/.config/fish/config.fish
 
 ```powershell
 # PowerShell
-echo 'sesh init powershell | Invoke-Expression' >> $PROFILE
+echo 'sesh init powershell | Out-String | Invoke-Expression' >> $PROFILE
 ```
 
 Or source the pre-made wrapper files in `shell/` directly. Run `sesh init --help` to see all options.
