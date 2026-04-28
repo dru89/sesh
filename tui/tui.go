@@ -373,7 +373,7 @@ func (m model) View() string {
 	if m.showDetail && len(m.filtered) > 0 && m.cursor < len(m.filtered) {
 		return m.viewWithDetail(w)
 	}
-	return m.viewList(w, w)
+	return m.viewList(w, w, true)
 }
 
 func (m model) viewWithDetail(totalW int) string {
@@ -384,12 +384,25 @@ func (m model) viewWithDetail(totalW int) string {
 	}
 	detailW := totalW - listW - 3 // 3 for the separator column
 
-	listView := m.viewList(listW, totalW)
+	// Render without help bar so we can place it at the bottom after merging.
+	listView := m.viewList(listW, totalW, false)
 	detailView := m.viewDetail(detailW)
 
 	// Place them side by side using a vertical separator.
 	listLines := strings.Split(listView, "\n")
 	detailLines := strings.Split(detailView, "\n")
+
+	// Cap both columns to leave the last row for the help bar.
+	maxContentLines := m.height - 1
+	if maxContentLines < 1 {
+		maxContentLines = 1
+	}
+	if len(listLines) > maxContentLines {
+		listLines = listLines[:maxContentLines]
+	}
+	if len(detailLines) > maxContentLines {
+		detailLines = detailLines[:maxContentLines]
+	}
 
 	// Pad to same height.
 	maxLines := len(listLines)
@@ -417,6 +430,9 @@ func (m model) viewWithDetail(totalW int) string {
 		b.WriteString(detailLines[i])
 		b.WriteString("\n")
 	}
+
+	// Help bar always at the bottom, spanning the full width.
+	b.WriteString(m.helpBar())
 
 	return b.String()
 }
@@ -535,7 +551,15 @@ func (m model) viewDetail(w int) string {
 	return b.String()
 }
 
-func (m model) viewList(w int, fullW int) string {
+func (m model) helpBar() string {
+	helpText := "  ↑/↓ navigate  enter select  tab detail  esc quit  dir: agent: filters"
+	if m.fallbackSearch != nil {
+		helpText += "  ^S AI search"
+	}
+	return helpStyle.Render(helpText)
+}
+
+func (m model) viewList(w int, fullW int, includeHelp bool) string {
 	var b strings.Builder
 
 	// Prompt line — rendered by the textinput component (includes cursor).
@@ -555,8 +579,12 @@ func (m model) viewList(w int, fullW int) string {
 	b.WriteString(strings.Repeat("─", clamp(w, 1, 120)))
 	b.WriteString("\n")
 
-	// Available height for the list.
-	listH := m.height - 4
+	// Available height for the list: subtract input row, separator, empty row,
+	// and (when rendering the help bar inline) the help bar row.
+	listH := m.height - 3
+	if includeHelp {
+		listH--
+	}
 	// The selected item shows a directory line beneath it, consuming an
 	// extra row. Subtract one more so the total content fits the terminal.
 	if !m.showDetail && len(m.filtered) > 0 && m.cursor < len(m.filtered) && m.filtered[m.cursor].Directory != "" {
@@ -655,11 +683,9 @@ func (m model) viewList(w int, fullW int) string {
 	}
 
 	b.WriteString("\n")
-	helpText := "  ↑/↓ navigate  enter select  tab detail  esc quit  dir: agent: filters"
-	if m.fallbackSearch != nil {
-		helpText += "  ^S AI search"
+	if includeHelp {
+		b.WriteString(m.helpBar())
 	}
-	b.WriteString(helpStyle.Render(helpText))
 
 	return b.String()
 }
