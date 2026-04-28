@@ -3,17 +3,19 @@ package summary
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dru89/sesh/internal/testhelper"
 )
 
 func TestRunLLMSuccess(t *testing.T) {
-	// Create a mock script that echoes its stdin back.
-	script := writeMockScript(t, "#!/bin/sh\ncat")
-
-	result, err := RunLLM(context.Background(), []string{script}, nil, "hello world", 5*time.Second)
+	cmd := testhelper.WriteMockScript(t,
+		"#!/bin/sh\ncat",
+		"[Console]::Out.Write([Console]::In.ReadToEnd())",
+	)
+	result, err := RunLLM(context.Background(), cmd, nil, "hello world", 5*time.Second)
 	if err != nil {
 		t.Fatalf("RunLLM failed: %v", err)
 	}
@@ -23,9 +25,11 @@ func TestRunLLMSuccess(t *testing.T) {
 }
 
 func TestRunLLMTruncatesWhitespace(t *testing.T) {
-	script := writeMockScript(t, "#!/bin/sh\necho '  trimmed  '")
-
-	result, err := RunLLM(context.Background(), []string{script}, nil, "", 5*time.Second)
+	cmd := testhelper.WriteMockScript(t,
+		"#!/bin/sh\necho '  trimmed  '",
+		"Write-Output '  trimmed  '",
+	)
+	result, err := RunLLM(context.Background(), cmd, nil, "", 5*time.Second)
 	if err != nil {
 		t.Fatalf("RunLLM failed: %v", err)
 	}
@@ -35,18 +39,22 @@ func TestRunLLMTruncatesWhitespace(t *testing.T) {
 }
 
 func TestRunLLMEmptyOutput(t *testing.T) {
-	script := writeMockScript(t, "#!/bin/sh\ntrue")
-
-	_, err := RunLLM(context.Background(), []string{script}, nil, "input", 5*time.Second)
+	cmd := testhelper.WriteMockScript(t,
+		"#!/bin/sh\ntrue",
+		"exit 0",
+	)
+	_, err := RunLLM(context.Background(), cmd, nil, "input", 5*time.Second)
 	if err == nil {
 		t.Error("expected error for empty output")
 	}
 }
 
 func TestRunLLMCommandFailure(t *testing.T) {
-	script := writeMockScript(t, "#!/bin/sh\nexit 1")
-
-	_, err := RunLLM(context.Background(), []string{script}, nil, "input", 5*time.Second)
+	cmd := testhelper.WriteMockScript(t,
+		"#!/bin/sh\nexit 1",
+		"exit 1",
+	)
+	_, err := RunLLM(context.Background(), cmd, nil, "input", 5*time.Second)
 	if err == nil {
 		t.Error("expected error for failed command")
 	}
@@ -60,9 +68,11 @@ func TestRunLLMCommandNotFound(t *testing.T) {
 }
 
 func TestRunLLMTimeout(t *testing.T) {
-	script := writeMockScript(t, "#!/bin/sh\nsleep 10")
-
-	_, err := RunLLM(context.Background(), []string{script}, nil, "input", 100*time.Millisecond)
+	cmd := testhelper.WriteMockScript(t,
+		"#!/bin/sh\nsleep 10",
+		"Start-Sleep 10",
+	)
+	_, err := RunLLM(context.Background(), cmd, nil, "input", 100*time.Millisecond)
 	if err == nil {
 		t.Error("expected error for timeout")
 	}
@@ -76,9 +86,11 @@ func TestRunLLMNoCommand(t *testing.T) {
 }
 
 func TestRunLLMStderrInError(t *testing.T) {
-	script := writeMockScript(t, "#!/bin/sh\necho 'bad model' >&2\nexit 1")
-
-	_, err := RunLLM(context.Background(), []string{script}, nil, "input", 5*time.Second)
+	cmd := testhelper.WriteMockScript(t,
+		"#!/bin/sh\necho 'bad model' >&2\nexit 1",
+		"[Console]::Error.WriteLine('bad model'); exit 1",
+	)
+	_, err := RunLLM(context.Background(), cmd, nil, "input", 5*time.Second)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -88,10 +100,12 @@ func TestRunLLMStderrInError(t *testing.T) {
 }
 
 func TestRunLLMWithEnv(t *testing.T) {
-	script := writeMockScript(t, "#!/bin/sh\necho $TEST_LLM_ENV")
-
+	cmd := testhelper.WriteMockScript(t,
+		"#!/bin/sh\necho $TEST_LLM_ENV",
+		"Write-Output $env:TEST_LLM_ENV",
+	)
 	env := append(os.Environ(), "TEST_LLM_ENV=hello_from_env")
-	result, err := RunLLM(context.Background(), []string{script}, env, "input", 5*time.Second)
+	result, err := RunLLM(context.Background(), cmd, env, "input", 5*time.Second)
 	if err != nil {
 		t.Fatalf("RunLLM failed: %v", err)
 	}
@@ -101,13 +115,11 @@ func TestRunLLMWithEnv(t *testing.T) {
 }
 
 func TestGenerateSuccess(t *testing.T) {
-	// Mock that returns a fixed summary regardless of input.
-	script := writeMockScript(t, "#!/bin/sh\necho 'Built JWT auth middleware'")
-
-	gen := NewGenerator(Config{
-		Command: []string{script},
-	})
-
+	cmd := testhelper.WriteMockScript(t,
+		"#!/bin/sh\necho 'Built JWT auth middleware'",
+		"Write-Output 'Built JWT auth middleware'",
+	)
+	gen := NewGenerator(Config{Command: cmd})
 	result, err := gen.Generate(context.Background(), "session text here")
 	if err != nil {
 		t.Fatalf("Generate failed: %v", err)
@@ -118,14 +130,12 @@ func TestGenerateSuccess(t *testing.T) {
 }
 
 func TestGenerateTruncatesLongOutput(t *testing.T) {
-	// Generate a 300-char output.
-	long := ""
-	for i := 0; i < 300; i++ {
-		long += "x"
-	}
-	script := writeMockScript(t, "#!/bin/sh\nprintf '"+long+"'")
-
-	gen := NewGenerator(Config{Command: []string{script}})
+	long := strings.Repeat("x", 300)
+	cmd := testhelper.WriteMockScript(t,
+		"#!/bin/sh\nprintf '"+long+"'",
+		"Write-Output '"+long+"'",
+	)
+	gen := NewGenerator(Config{Command: cmd})
 	result, err := gen.Generate(context.Background(), "input")
 	if err != nil {
 		t.Fatalf("Generate failed: %v", err)
@@ -144,9 +154,11 @@ func TestGenerateNotConfigured(t *testing.T) {
 }
 
 func TestGenerateBatch(t *testing.T) {
-	script := writeMockScript(t, "#!/bin/sh\necho 'summary'")
-
-	gen := NewGenerator(Config{Command: []string{script}})
+	cmd := testhelper.WriteMockScript(t,
+		"#!/bin/sh\necho 'summary'",
+		"Write-Output 'summary'",
+	)
+	gen := NewGenerator(Config{Command: cmd})
 	cache := newTestCache(t)
 
 	items := []BatchItem{
@@ -171,10 +183,11 @@ func TestGenerateBatch(t *testing.T) {
 }
 
 func TestGenerateBatchPartialFailure(t *testing.T) {
-	// Fail on second call by checking if stdin contains "fail".
-	script := writeMockScript(t, "#!/bin/sh\ninput=$(cat)\ncase \"$input\" in *fail*) exit 1;; esac\necho 'ok'")
-
-	gen := NewGenerator(Config{Command: []string{script}})
+	cmd := testhelper.WriteMockScript(t,
+		"#!/bin/sh\ninput=$(cat)\ncase \"$input\" in *fail*) exit 1;; esac\necho 'ok'",
+		"$content = [Console]::In.ReadToEnd()\nif ($content -match 'fail') { exit 1 }\nWrite-Output 'ok'",
+	)
+	gen := NewGenerator(Config{Command: cmd})
 	cache := newTestCache(t)
 
 	items := []BatchItem{
@@ -259,11 +272,12 @@ func TestBuildPrompt(t *testing.T) {
 }
 
 func TestGenerateWithSystemPrompt(t *testing.T) {
-	// Mock that echoes stdin so we can verify the prompt structure.
-	script := writeMockScript(t, "#!/bin/sh\ncat")
-
+	cmd := testhelper.WriteMockScript(t,
+		"#!/bin/sh\ncat",
+		"[Console]::Out.Write([Console]::In.ReadToEnd())",
+	)
 	gen := NewGenerator(Config{
-		Command:      []string{script},
+		Command:      cmd,
 		SystemPrompt: "You are a test assistant.",
 	})
 
@@ -277,17 +291,6 @@ func TestGenerateWithSystemPrompt(t *testing.T) {
 	if !strings.Contains(result, "hello") {
 		t.Error("expected transcript in output")
 	}
-}
-
-// writeMockScript creates an executable shell script in a temp dir.
-func writeMockScript(t *testing.T, content string) string {
-	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "mock.sh")
-	if err := os.WriteFile(path, []byte(content), 0755); err != nil {
-		t.Fatal(err)
-	}
-	return path
 }
 
 func TestStripMarkdown(t *testing.T) {

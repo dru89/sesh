@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -69,17 +71,34 @@ func TestCdAndRun(t *testing.T) {
 		name string
 		dir  string
 		cmd  string
-		want string
+		unix string
+		win  string
 	}{
-		{"no dir", "", "opencode --session abc", "opencode --session abc"},
-		{"simple dir", "/home/user/project", "opencode --session abc", "cd /home/user/project && opencode --session abc"},
-		{"dir with spaces", "/home/user/my project", "opencode --session abc", "cd '/home/user/my project' && opencode --session abc"},
+		{
+			"no dir", "", "opencode --session abc",
+			"opencode --session abc",
+			"opencode --session abc",
+		},
+		{
+			"simple dir", "/home/user/project", "opencode --session abc",
+			"cd /home/user/project && opencode --session abc",
+			fmt.Sprintf("Set-Location %s; opencode --session abc", ShellQuotePowerShell("/home/user/project")),
+		},
+		{
+			"dir with spaces", "/home/user/my project", "opencode --session abc",
+			"cd '/home/user/my project' && opencode --session abc",
+			fmt.Sprintf("Set-Location %s; opencode --session abc", ShellQuotePowerShell("/home/user/my project")),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := CdAndRun(tt.dir, tt.cmd)
-			if got != tt.want {
-				t.Errorf("CdAndRun(%q, %q) = %q, want %q", tt.dir, tt.cmd, got, tt.want)
+			want := tt.unix
+			if runtime.GOOS == "windows" {
+				want = tt.win
+			}
+			if got != want {
+				t.Errorf("CdAndRun(%q, %q) = %q, want %q", tt.dir, tt.cmd, got, want)
 			}
 		})
 	}

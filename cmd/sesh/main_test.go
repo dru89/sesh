@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dru89/sesh/agent"
+	"github.com/dru89/sesh/internal/testhelper"
 	"github.com/dru89/sesh/provider"
 	"github.com/dru89/sesh/summary"
 	"github.com/dru89/sesh/tui"
@@ -907,9 +908,11 @@ func TestAiFilterSessions(t *testing.T) {
 	sessions := testSessions()
 
 	// Mock LLM that returns "1\n3\n" (first and third sessions).
-	script := writeMockScript(t, "#!/bin/sh\necho '1\n3'")
-
-	result := aiFilterSessions(context.Background(), []string{script}, nil, "auth", sessions, 10)
+	cmd := testhelper.WriteMockScript(t,
+		"#!/bin/sh\necho '1\n3'",
+		"Write-Output 1\nWrite-Output 3",
+	)
+	result := aiFilterSessions(context.Background(), cmd, nil, "auth", sessions, 10)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(result))
 	}
@@ -925,9 +928,11 @@ func TestAiFilterSessionsFormats(t *testing.T) {
 	sessions := testSessions()
 
 	// LLM returns numbers in various formats.
-	script := writeMockScript(t, "#!/bin/sh\necho '2.\n4 - build pipeline'")
-
-	result := aiFilterSessions(context.Background(), []string{script}, nil, "tests", sessions, 10)
+	cmd := testhelper.WriteMockScript(t,
+		"#!/bin/sh\necho '2.\n4 - build pipeline'",
+		"Write-Output '2.'\nWrite-Output '4 - build pipeline'",
+	)
+	result := aiFilterSessions(context.Background(), cmd, nil, "tests", sessions, 10)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(result))
 	}
@@ -943,9 +948,11 @@ func TestAiFilterSessionsNoResults(t *testing.T) {
 	sessions := testSessions()
 
 	// LLM returns empty output.
-	script := writeMockScript(t, "#!/bin/sh\necho ''")
-
-	result := aiFilterSessions(context.Background(), []string{script}, nil, "nothing", sessions, 10)
+	cmd := testhelper.WriteMockScript(t,
+		"#!/bin/sh\necho ''",
+		"Write-Output ''",
+	)
+	result := aiFilterSessions(context.Background(), cmd, nil, "nothing", sessions, 10)
 	if len(result) != 0 {
 		t.Errorf("expected 0 results, got %d", len(result))
 	}
@@ -954,9 +961,11 @@ func TestAiFilterSessionsNoResults(t *testing.T) {
 func TestAiFilterSessionsCommandFailure(t *testing.T) {
 	sessions := testSessions()
 
-	script := writeMockScript(t, "#!/bin/sh\nexit 1")
-
-	result := aiFilterSessions(context.Background(), []string{script}, nil, "query", sessions, 10)
+	cmd := testhelper.WriteMockScript(t,
+		"#!/bin/sh\nexit 1",
+		"exit 1",
+	)
+	result := aiFilterSessions(context.Background(), cmd, nil, "query", sessions, 10)
 	if result != nil {
 		t.Errorf("expected nil on failure, got %d results", len(result))
 	}
@@ -973,9 +982,11 @@ func TestAiFilterSessionsMaxResults(t *testing.T) {
 	}
 
 	// LLM returns all 20.
-	script := writeMockScript(t, "#!/bin/sh\nseq 1 20")
-
-	result := aiFilterSessions(context.Background(), []string{script}, nil, "all", sessions, 10)
+	cmd := testhelper.WriteMockScript(t,
+		"#!/bin/sh\nseq 1 20",
+		"1..20 | ForEach-Object { Write-Output $_ }",
+	)
+	result := aiFilterSessions(context.Background(), cmd, nil, "all", sessions, 10)
 	if len(result) != 10 {
 		t.Errorf("expected max 10 results, got %d", len(result))
 	}
@@ -1060,14 +1071,15 @@ func TestBuildEnvOverridesProcessEnv(t *testing.T) {
 }
 
 func TestBuildEnvPassedToRunLLM(t *testing.T) {
-	// Script that prints the value of TEST_ENV_VAR.
-	script := writeMockScript(t, "#!/bin/sh\necho $TEST_ENV_VAR")
-
+	cmd := testhelper.WriteMockScript(t,
+		"#!/bin/sh\necho $TEST_ENV_VAR",
+		"Write-Output $env:TEST_ENV_VAR",
+	)
 	cfg := config{
 		Env: map[string]string{"TEST_ENV_VAR": "from_config"},
 	}
 	env := cfg.buildEnv(nil)
-	result, err := summary.RunLLM(context.Background(), []string{script}, env, "input", 5*time.Second)
+	result, err := summary.RunLLM(context.Background(), cmd, env, "input", 5*time.Second)
 	if err != nil {
 		t.Fatalf("RunLLM failed: %v", err)
 	}
@@ -1101,16 +1113,6 @@ func assertEnvMap(t *testing.T, name string, got, want map[string]string) {
 			t.Errorf("%s[%q] = %q, want %q", name, k, got[k], v)
 		}
 	}
-}
-
-func writeMockScript(t *testing.T, content string) string {
-	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "mock.sh")
-	if err := os.WriteFile(path, []byte(content), 0755); err != nil {
-		t.Fatal(err)
-	}
-	return path
 }
 
 // --- resolveDirFlags tests ---

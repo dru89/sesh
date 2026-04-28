@@ -117,7 +117,7 @@ func TestOpenCodeResumeCommand(t *testing.T) {
 	oc := &OpenCode{}
 	s := Session{ID: "ses_abc", Directory: "/home/user/project"}
 	got := oc.ResumeCommand(s)
-	want := "cd /home/user/project && opencode --session ses_abc"
+	want := CdAndRun("/home/user/project", "opencode --session ses_abc")
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -127,7 +127,7 @@ func TestOpenCodeResumeCommandOverride(t *testing.T) {
 	oc := &OpenCode{resumeCommand: "ca opencode -s {{ID}}"}
 	s := Session{ID: "ses_abc", Directory: "/home/user/project"}
 	got := oc.ResumeCommand(s)
-	want := "cd /home/user/project && ca opencode -s ses_abc"
+	want := CdAndRun("/home/user/project", "ca opencode -s ses_abc")
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -299,7 +299,7 @@ func TestClaudeResumeCommand(t *testing.T) {
 	c := &Claude{}
 	s := Session{ID: "abc-123", Directory: "/home/user/project"}
 	got := c.ResumeCommand(s)
-	want := "cd /home/user/project && claude --resume abc-123"
+	want := CdAndRun("/home/user/project", "claude --resume abc-123")
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -348,7 +348,7 @@ func TestExternalResumeCommand(t *testing.T) {
 	}
 	s := Session{ID: "abc", Directory: "/home/user/proj"}
 	got := e.ResumeCommand(s)
-	want := "cd /home/user/proj && myagent --resume abc"
+	want := CdAndRun("/home/user/proj", "myagent --resume abc")
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}

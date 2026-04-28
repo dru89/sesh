@@ -100,8 +100,11 @@ func FilterSessions(sessions []provider.Session, pq ParsedQuery) []provider.Sess
 	result := sessions
 
 	// Apply dir: filter via fuzzy matching on Directory field.
+	// Normalize the query dir so slash style matches the session directory
+	// normalization on all platforms.
 	if pq.Dir != "" {
-		result = fuzzyFilterField(result, pq.Dir, func(s provider.Session) string {
+		normalizedDir := normalizePath(pq.Dir)
+		result = fuzzyFilterField(result, normalizedDir, func(s provider.Session) string {
 			return normalizePath(s.Directory)
 		})
 	}

@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/dru89/sesh/provider"
@@ -210,9 +211,10 @@ func TestNormalizePath(t *testing.T) {
 		want  string
 	}{
 		{"empty", "", ""},
-		{"absolute", "/Users/drew/project", "/Users/drew/project"},
-		{"trailing slash", "/Users/drew/project/", "/Users/drew/project"},
-		{"double slash", "/Users/drew//project", "/Users/drew/project"},
+		// filepath.FromSlash converts / to \ on Windows, matching filepath.Clean output.
+		{"absolute", "/Users/drew/project", filepath.FromSlash("/Users/drew/project")},
+		{"trailing slash", "/Users/drew/project/", filepath.FromSlash("/Users/drew/project")},
+		{"double slash", "/Users/drew//project", filepath.FromSlash("/Users/drew/project")},
 		{"tilde", "~/project", filepath.Join(home, "project")},
 		{"bare tilde", "~", home},
 		{"dot", ".", "."},
@@ -320,6 +322,11 @@ func TestResolveDir(t *testing.T) {
 	})
 
 	t.Run("absolute path", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			// On Windows, filepath.Abs prepends the current drive (e.g. C:\usr\local\bin),
+			// making the expected value unknowable at compile time. Skip.
+			t.Skip("unix-specific absolute path")
+		}
 		got, err := ResolveDir("/usr/local/bin")
 		if err != nil {
 			t.Fatal(err)
@@ -352,6 +359,9 @@ func TestResolveDir(t *testing.T) {
 	})
 
 	t.Run("trailing slash cleaned", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("unix-specific absolute path")
+		}
 		got, err := ResolveDir("/usr/local/bin/")
 		if err != nil {
 			t.Fatal(err)
@@ -376,8 +386,10 @@ func TestResolveDir(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got != "foo/bar" {
-			t.Errorf("got %q, want %q", got, "foo/bar")
+		// filepath.Clean converts / to \ on Windows.
+		want := filepath.FromSlash("foo/bar")
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
 		}
 	})
 }
