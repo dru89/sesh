@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Collapse repeat runs of a Claude Cowork scheduled task by default: routine runs fold into one representative (labeled with the run count), while runs you engaged with (a human turn beyond the trigger) are kept individually — so a recurring automation doesn't flood the picker or overrun the `sesh ask` filter without hiding the sessions you dug into; disable with `collapse_scheduled: false`
+
 ## [2.2.0] - 2026-07-28
 
 - Add `sesh setup` — detects an LLM CLI on your PATH (`llm`, `claude`, or `codex`), shows the config it wants to write, and verifies the result actually works before finishing. Uses whatever you're already logged into, so there are no API keys to manage. Existing settings are never overwritten; run it with a partial config and it fills only the gaps

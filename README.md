@@ -154,6 +154,18 @@ sesh also surfaces Claude Cowork sessions (the desktop app's local agent-mode fe
 }
 ```
 
+By default, repeat runs of the same scheduled task (a recurring automation) are collapsed: the routine runs fold into one entry labeled with the run count, while any run you actually engaged with — where you typed something beyond the automated trigger — is kept on its own. So a nightly task doesn't flood the picker with hundreds of near-identical sessions, but the ones where you dug in stay findable. Set `collapse_scheduled` to `false` to list every run instead:
+
+```json
+{
+  "providers": {
+    "claude-cowork": {
+      "collapse_scheduled": false
+    }
+  }
+}
+```
+
 ### Disable a built-in provider
 
 ```json

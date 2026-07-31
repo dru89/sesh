@@ -944,6 +944,154 @@ func TestClaudeCoworkResumeCommandOverride(t *testing.T) {
 	}
 }
 
+// writeCoworkScheduledMeta drops a minimal metadata file for one scheduled run
+// into an existing two-level session dir. schedID may be empty for a one-off.
+func writeCoworkScheduledMeta(t *testing.T, sessionsRoot, sessionID, schedID string, ms int64) {
+	t.Helper()
+	metadata := map[string]any{
+		"sessionId":       sessionID,
+		"title":           "Nightly triage",
+		"createdAt":       ms,
+		"lastActivityAt":  ms,
+		"scheduledTaskId": schedID,
+		"isArchived":      false,
+	}
+	metaBytes, err := json.Marshal(metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sessionsRoot, sessionID+".json"), metaBytes, 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// setupCoworkScheduledRuns writes three runs of one scheduled task plus one
+// unscheduled session, and returns the base dir. run3 is the most recent.
+func setupCoworkScheduledRuns(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	sessionsRoot := filepath.Join(dir, "local-agent-mode-sessions", "uuid-a", "uuid-b")
+	if err := os.MkdirAll(sessionsRoot, 0755); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UnixMilli()
+	writeCoworkScheduledMeta(t, sessionsRoot, "local_run1", "triage-task", now-3000)
+	writeCoworkScheduledMeta(t, sessionsRoot, "local_run2", "triage-task", now-2000)
+	writeCoworkScheduledMeta(t, sessionsRoot, "local_run3", "triage-task", now-1000)
+	writeCoworkScheduledMeta(t, sessionsRoot, "local_oneoff", "", now)
+	return dir
+}
+
+func TestClaudeCoworkCollapsesScheduledRuns(t *testing.T) {
+	dir := setupCoworkScheduledRuns(t)
+
+	sessions, err := (&ClaudeCowork{baseDir: dir, collapseScheduled: true}).ListSessions(context.Background())
+	if err != nil {
+		t.Fatalf("ListSessions failed: %v", err)
+	}
+	// Three runs collapse to one representative; the one-off stays separate.
+	if len(sessions) != 2 {
+		t.Fatalf("expected 2 sessions after collapse, got %d", len(sessions))
+	}
+
+	var rep *Session
+	for i := range sessions {
+		if strings.Contains(sessions[i].Title, "runs") {
+			rep = &sessions[i]
+		}
+	}
+	if rep == nil {
+		t.Fatalf("no collapsed representative found in %+v", sessions)
+	}
+	if rep.Title != "Nightly triage (3 runs)" {
+		t.Errorf("representative title = %q, want %q", rep.Title, "Nightly triage (3 runs)")
+	}
+	if rep.ID != "local_run3" {
+		t.Errorf("representative should carry the most recent run's ID, got %q", rep.ID)
+	}
+}
+
+func TestClaudeCoworkCollapseDisabled(t *testing.T) {
+	dir := setupCoworkScheduledRuns(t)
+
+	sessions, err := (&ClaudeCowork{baseDir: dir, collapseScheduled: false}).ListSessions(context.Background())
+	if err != nil {
+		t.Fatalf("ListSessions failed: %v", err)
+	}
+	if len(sessions) != 4 {
+		t.Fatalf("expected 4 sessions with collapse disabled, got %d", len(sessions))
+	}
+}
+
+// writeCoworkTranscript writes a transcript for a session's sandbox with the
+// given user-message contents (one JSONL line each).
+func writeCoworkTranscript(t *testing.T, sessionsRoot, sessionID string, userContents []string) {
+	t.Helper()
+	proj := filepath.Join(sessionsRoot, sessionID, ".claude", "projects", "proj")
+	if err := os.MkdirAll(proj, 0755); err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	for _, c := range userContents {
+		line, err := json.Marshal(map[string]any{
+			"type":    "user",
+			"message": map[string]any{"content": c},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.Write(line)
+		b.WriteByte('\n')
+	}
+	if err := os.WriteFile(filepath.Join(proj, "transcript.jsonl"), []byte(b.String()), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestClaudeCoworkKeepsInteractiveRuns(t *testing.T) {
+	dir := t.TempDir()
+	sessionsRoot := filepath.Join(dir, "local-agent-mode-sessions", "uuid-a", "uuid-b")
+	if err := os.MkdirAll(sessionsRoot, 0755); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UnixMilli()
+	writeCoworkScheduledMeta(t, sessionsRoot, "local_r1", "t", now-3000)
+	writeCoworkScheduledMeta(t, sessionsRoot, "local_r2", "t", now-2000)
+	writeCoworkScheduledMeta(t, sessionsRoot, "local_r3", "t", now-1000)
+	// r2 has a human follow-up beyond the trigger, so it must be kept separate.
+	writeCoworkTranscript(t, sessionsRoot, "local_r2", []string{
+		`<scheduled-task name="triage">go`,
+		"Actually, archive the Chad message and walk me through the calendar",
+	})
+
+	sessions, err := (&ClaudeCowork{baseDir: dir, collapseScheduled: true}).ListSessions(context.Background())
+	if err != nil {
+		t.Fatalf("ListSessions failed: %v", err)
+	}
+	// r1 and r3 (pure automation) collapse to one rep; r2 (interactive) stays.
+	if len(sessions) != 2 {
+		t.Fatalf("expected 2 sessions (rep for r1/r3 + kept r2), got %d: %+v", len(sessions), sessions)
+	}
+	var kept, rep *Session
+	for i := range sessions {
+		if sessions[i].ID == "local_r2" {
+			kept = &sessions[i]
+		}
+		if strings.Contains(sessions[i].Title, "runs") {
+			rep = &sessions[i]
+		}
+	}
+	if kept == nil {
+		t.Fatal("interactive run local_r2 was collapsed away")
+	}
+	if strings.Contains(kept.Title, "runs") {
+		t.Errorf("kept run should not be annotated as collapsed: %q", kept.Title)
+	}
+	if rep == nil || rep.Title != "Nightly triage (2 runs)" {
+		t.Errorf("expected representative %q, got %+v", "Nightly triage (2 runs)", rep)
+	}
+}
+
 // createTestClaudeCoworkData creates a minimal Claude desktop app session
 // store: local-agent-mode-sessions/<uuidA>/<uuidB>/local_<id>.json plus a
 // sibling sandbox dir local_<id>/ containing audit.jsonl and, when

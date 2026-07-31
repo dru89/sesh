@@ -256,6 +256,33 @@ type providerConfig struct {
 	// Env sets environment variables for list_command execution.
 	// Overrides top-level env for this provider.
 	Env map[string]string `json:"env,omitempty"`
+
+	// raw retains the full provider config object so a connector can decode its
+	// own connector-specific settings via settings(), instead of every flag for
+	// every connector being hardcoded as a field on this shared struct.
+	raw json.RawMessage
+}
+
+// UnmarshalJSON decodes the common fields and keeps the raw object around so
+// connector-specific settings can be pulled out later via settings().
+func (pc *providerConfig) UnmarshalJSON(b []byte) error {
+	type alias providerConfig // avoid recursing into this method
+	var a alias
+	if err := json.Unmarshal(b, &a); err != nil {
+		return err
+	}
+	*pc = providerConfig(a)
+	pc.raw = append(json.RawMessage(nil), b...)
+	return nil
+}
+
+// settings decodes connector-specific config into v (a pointer to a struct with
+// json tags). Each connector reads only the keys it understands; the shared
+// struct stays free of per-connector fields.
+func (pc providerConfig) settings(v any) {
+	if len(pc.raw) > 0 {
+		_ = json.Unmarshal(pc.raw, v)
+	}
 }
 
 // resumeCommandStr parses resume_command from either string or array form.
@@ -2034,6 +2061,12 @@ func buildProviders(cfg config) []provider.Provider {
 				if cmd := ca.resumeCommandStr(); cmd != "" {
 					opts = append(opts, provider.WithClaudeCoworkResumeCommand(cmd))
 				}
+				var cc struct {
+					CollapseScheduled *bool `json:"collapse_scheduled"`
+				}
+				ca.settings(&cc)
+				collapse := cc.CollapseScheduled == nil || *cc.CollapseScheduled
+				opts = append(opts, provider.WithClaudeCoworkCollapseScheduled(collapse))
 				providers = append(providers, provider.NewClaudeCowork(opts...))
 			}
 		}
