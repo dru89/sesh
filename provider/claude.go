@@ -49,13 +49,14 @@ type historyEntry struct {
 
 func (c *Claude) ListSessions(ctx context.Context) ([]Session, error) {
 	historyPath := filepath.Join(c.baseDir, "history.jsonl")
-	if _, err := os.Stat(historyPath); os.IsNotExist(err) {
+	fi, err := os.Stat(historyPath)
+	if os.IsNotExist(err) {
 		return nil, nil
 	}
 
-	f, err := os.Open(historyPath)
-	if err != nil {
-		return nil, fmt.Errorf("open history.jsonl: %w", err)
+	f, openErr := os.Open(historyPath)
+	if openErr != nil {
+		return nil, fmt.Errorf("open history.jsonl: %w", openErr)
 	}
 	defer f.Close()
 
@@ -70,10 +71,12 @@ func (c *Claude) ListSessions(ctx context.Context) ([]Session, error) {
 	}
 	grouped := make(map[string]*sessionInfo)
 
+	entries := 0
 	for entry := range jsonlDecode[historyEntry](jsonlLinesFrom(f, historyPath)) {
 		if entry.SessionID == "" {
 			continue
 		}
+		entries++
 
 		info, exists := grouped[entry.SessionID]
 		if !exists {
@@ -103,6 +106,16 @@ func (c *Claude) ListSessions(ctx context.Context) ([]Session, error) {
 				info.prompts = append(info.prompts, entry.Display)
 			}
 		}
+	}
+
+	// A history file with content but not one usable entry means we no longer
+	// understand its format. Returning an error rather than an empty list is
+	// the point: history.jsonl is this provider's entire input, so zero
+	// sessions with a nil error is indistinguishable from having none. Gated on
+	// file size rather than a line count so it costs nothing — the only false
+	// positive is a history that is purely whitespace, which nothing writes.
+	if entries == 0 && err == nil && fi.Size() > 0 {
+		return nil, fmt.Errorf("history.jsonl holds %d bytes but no entry with a sessionId — the history format may have changed", fi.Size())
 	}
 
 	// Load slugs from transcript files.

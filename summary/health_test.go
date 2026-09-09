@@ -283,3 +283,71 @@ func TestCondenseErrorTruncatesOnRuneBoundary(t *testing.T) {
 		t.Errorf("got %d runes, want %d", len([]rune(got)), maxRecordedErrorLen)
 	}
 }
+
+func TestHealthNoUsableTextThreshold(t *testing.T) {
+	h := newTestHealth(t)
+
+	h.RecordNoUsableText(NoTextHintThreshold-1, "sess-1")
+	if h.NoUsableText() {
+		t.Error("reported below the threshold; a couple of textless sessions is ordinary")
+	}
+
+	h.RecordNoUsableText(NoTextHintThreshold, "sess-1")
+	if !h.NoUsableText() {
+		t.Error("did not report at the threshold")
+	}
+	if h.NoTextSkips() != NoTextHintThreshold {
+		t.Errorf("skips = %d, want %d", h.NoTextSkips(), NoTextHintThreshold)
+	}
+	if h.NoTextExample() != "sess-1" {
+		t.Errorf("example = %q, want sess-1", h.NoTextExample())
+	}
+}
+
+// A run that read text again means whatever was wrong is over, so the hint has
+// to stop. Otherwise it outlives its cause and becomes noise.
+func TestHealthRecordRunClearsNoUsableText(t *testing.T) {
+	h := newTestHealth(t)
+	h.RecordNoUsableText(20, "sess-1")
+
+	h.RecordRun(3, 3, nil, []string{"llm"})
+
+	if h.NoUsableText() {
+		t.Error("still reporting unreadable text after a run that read text")
+	}
+	if h.NoTextExample() != "" {
+		t.Errorf("stale example survived: %q", h.NoTextExample())
+	}
+}
+
+// Even a run where every summary failed proves text was readable — the failure
+// was downstream, in the LLM command, and that has its own hint.
+func TestHealthFailedRunAlsoClearsNoUsableText(t *testing.T) {
+	h := newTestHealth(t)
+	h.RecordNoUsableText(20, "sess-1")
+
+	h.RecordRun(3, 0, errors.New("boom"), []string{"llm"})
+
+	if h.NoUsableText() {
+		t.Error("a failed-but-attempted run should clear the no-text state")
+	}
+}
+
+func TestHealthNoUsableTextRoundtrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "index-health.json")
+	h := &Health{path: path}
+	h.RecordNoUsableText(12, "sess-abc")
+	if err := h.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded := &Health{path: path}
+	reloaded.load()
+
+	if !reloaded.NoUsableText() {
+		t.Error("no-text state did not survive save/load")
+	}
+	if reloaded.NoTextSkips() != 12 || reloaded.NoTextExample() != "sess-abc" {
+		t.Errorf("reloaded skips=%d example=%q", reloaded.NoTextSkips(), reloaded.NoTextExample())
+	}
+}
