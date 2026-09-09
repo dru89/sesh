@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -71,8 +70,7 @@ func (c *Claude) ListSessions(ctx context.Context) ([]Session, error) {
 	}
 	grouped := make(map[string]*sessionInfo)
 
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	scanner := newJSONLScanner(f)
 	for scanner.Scan() {
 		var entry historyEntry
 		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil || entry.SessionID == "" {
@@ -108,6 +106,7 @@ func (c *Claude) ListSessions(ctx context.Context) ([]Session, error) {
 			}
 		}
 	}
+	warnScanErr(scanner.Err(), historyPath)
 
 	// Load slugs from transcript files.
 	slugs := c.loadSlugs()
@@ -226,8 +225,7 @@ func firstUserPrompt(path string) string {
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	scanner := newJSONLScanner(f)
 	for scanner.Scan() {
 		var raw struct {
 			IsMeta  bool `json:"isMeta"`
@@ -252,6 +250,7 @@ func firstUserPrompt(path string) string {
 		}
 		return s
 	}
+	warnScanErr(scanner.Err(), path)
 	return ""
 }
 
@@ -275,8 +274,7 @@ func (c *Claude) extractSlug(path string) string {
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 256*1024), 256*1024)
+	scanner := newJSONLScanner(f)
 	for i := 0; i < 20 && scanner.Scan(); i++ {
 		var msg struct {
 			Slug string `json:"slug"`
@@ -285,6 +283,7 @@ func (c *Claude) extractSlug(path string) string {
 			return msg.Slug
 		}
 	}
+	warnScanErr(scanner.Err(), path)
 	return ""
 }
 
@@ -351,8 +350,7 @@ func extractConversationText(path string) string {
 	var order []string // unique message keys in order
 	seq := 0
 
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	scanner := newJSONLScanner(f)
 	for scanner.Scan() {
 		var raw struct {
 			Type    string `json:"type"`
@@ -422,6 +420,7 @@ func extractConversationText(path string) string {
 			seq++
 		}
 	}
+	warnScanErr(scanner.Err(), path)
 
 	// Build conversation text in order.
 	var parts []string

@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -284,8 +283,7 @@ func countHumanTurns(path string) int {
 	defer f.Close()
 
 	n := 0
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 32*1024*1024) // transcripts have long lines
+	scanner := newJSONLScanner(f)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if !bytes.Contains(line, []byte(`"user"`)) {
@@ -318,6 +316,9 @@ func countHumanTurns(path string) int {
 		}
 		n++
 	}
+	// A short read undercounts turns, which reads as a routine run and folds a
+	// session the user actually worked in into a collapsed group.
+	warnScanErr(scanner.Err(), path)
 	return n
 }
 

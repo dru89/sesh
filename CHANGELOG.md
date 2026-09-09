@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - Collapse repeat runs of a Claude Cowork scheduled task by default: routine runs fold into one representative (labeled with the run count), while runs you engaged with (a human turn beyond the trigger) are kept individually — so a recurring automation doesn't flood the picker or overrun the `sesh ask` filter without hiding the sessions you dug into; disable with `collapse_scheduled: false`
+- Fix Claude Code transcripts being silently truncated at the first very long line. Session text, titles, and summary input all came from readers capped at 1 MB per line (256 KB in one), and a single line holds a whole message — so a pasted file or a long tool result blew the cap and ended the read, taking every message after it. One transcript on the author's machine had its long line 20 messages from the end, so sesh never saw the part of the session that said what it was about. Every reader now shares one generous limit and reports a read that stops short instead of returning quietly short data. The shared limit also covers the scheduled-run turn count above, where a short read made a session you worked in look like a routine run
 
 ## [2.2.0] - 2026-07-28
 
