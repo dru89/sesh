@@ -93,3 +93,95 @@ func TestClaudeListSessionsReadsPastOversizedHistoryLine(t *testing.T) {
 		t.Errorf("newest session = %q, want sess-after", sessions[0].ID)
 	}
 }
+
+// --- iterator layer ---
+
+func TestJSONLLinesMissingFileYieldsNothing(t *testing.T) {
+	n := 0
+	for range jsonlLines(filepath.Join(t.TempDir(), "absent.jsonl")) {
+		n++
+	}
+	if n != 0 {
+		t.Errorf("yielded %d lines from a missing file, want 0", n)
+	}
+}
+
+// Breaking out of the loop has to close the file. Windows refuses to remove a
+// file with an open handle, so the remove below fails there if the iterator
+// leaks one. On Unix the remove always succeeds and this only asserts that
+// breaking early is otherwise well-behaved — the real coverage comes from the
+// Windows CI job.
+func TestJSONLLinesClosesFileOnEarlyBreak(t *testing.T) {
+	path := writeTranscript(t, `{"a":1}`, `{"a":2}`, `{"a":3}`)
+
+	for range jsonlLines(path) {
+		break // abandon the read with lines still unread
+	}
+
+	if err := os.Remove(path); err != nil {
+		t.Errorf("removing the transcript after an aborted read: %v", err)
+	}
+}
+
+func TestJSONLDecodeSkipsUnparseableLines(t *testing.T) {
+	path := writeTranscript(t,
+		`{"slug":"first"}`,
+		`not json at all`,
+		`{"slug":"second"}`,
+	)
+
+	var got []string
+	for rec := range jsonlDecode[struct {
+		Slug string `json:"slug"`
+	}](jsonlLines(path)) {
+		got = append(got, rec.Slug)
+	}
+	if len(got) != 2 || got[0] != "first" || got[1] != "second" {
+		t.Errorf("got %v, want [first second]", got)
+	}
+}
+
+// The decode layer must stop pulling lines when the consumer stops, or an
+// early return still pays to parse the rest of the file.
+func TestJSONLDecodeStopsPullingOnBreak(t *testing.T) {
+	pulled := 0
+	lines := func(yield func([]byte) bool) {
+		for i := 0; i < 100; i++ {
+			pulled++
+			if !yield([]byte(`{"slug":"x"}`)) {
+				return
+			}
+		}
+	}
+
+	for range jsonlDecode[struct {
+		Slug string `json:"slug"`
+	}](lines) {
+		break
+	}
+	if pulled != 1 {
+		t.Errorf("pulled %d lines after an immediate break, want 1", pulled)
+	}
+}
+
+// jsonlLinesFrom is the variant for callers that opened the file themselves so
+// they can report an open failure; it must still warn on a short read.
+func TestJSONLLinesFromReadsPastOversizedLine(t *testing.T) {
+	path := writeTranscript(t,
+		fmt.Sprintf(`{"slug":%q}`, hugeText()),
+		`{"slug":"after"}`,
+	)
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	n := 0
+	for range jsonlLinesFrom(f, path) {
+		n++
+	}
+	if n != 2 {
+		t.Errorf("read %d lines, want 2", n)
+	}
+}

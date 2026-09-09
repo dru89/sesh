@@ -70,10 +70,8 @@ func (c *Claude) ListSessions(ctx context.Context) ([]Session, error) {
 	}
 	grouped := make(map[string]*sessionInfo)
 
-	scanner := newJSONLScanner(f)
-	for scanner.Scan() {
-		var entry historyEntry
-		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil || entry.SessionID == "" {
+	for entry := range jsonlDecode[historyEntry](jsonlLinesFrom(f, historyPath)) {
+		if entry.SessionID == "" {
 			continue
 		}
 
@@ -106,7 +104,6 @@ func (c *Claude) ListSessions(ctx context.Context) ([]Session, error) {
 			}
 		}
 	}
-	warnScanErr(scanner.Err(), historyPath)
 
 	// Load slugs from transcript files.
 	slugs := c.loadSlugs()
@@ -219,24 +216,7 @@ func (c *Claude) firstTranscriptPrompt(sessionID string) string {
 // that is a real typed prompt — not a meta entry, a command input, or the
 // transcript record of a slash command execution.
 func firstUserPrompt(path string) string {
-	f, err := os.Open(path)
-	if err != nil {
-		return ""
-	}
-	defer f.Close()
-
-	scanner := newJSONLScanner(f)
-	for scanner.Scan() {
-		var raw struct {
-			IsMeta  bool `json:"isMeta"`
-			Message struct {
-				Role    string          `json:"role"`
-				Content json.RawMessage `json:"content"`
-			} `json:"message"`
-		}
-		if err := json.Unmarshal(scanner.Bytes(), &raw); err != nil {
-			continue
-		}
+	for raw := range jsonlDecode[transcriptRecord](jsonlLines(path)) {
 		if raw.IsMeta || raw.Message.Role != "user" {
 			continue
 		}
@@ -250,8 +230,23 @@ func firstUserPrompt(path string) string {
 		}
 		return s
 	}
-	warnScanErr(scanner.Err(), path)
 	return ""
+}
+
+// transcriptRecord is the transcript JSONL line shape these readers care
+// about. Each previously declared its own anonymous subset of it; naming it
+// once means jsonlDecode has a type to decode into, and a field one reader
+// needs is visible to the others.
+type transcriptRecord struct {
+	Type    string `json:"type"`
+	IsMeta  bool   `json:"isMeta"`
+	Slug    string `json:"slug"`
+	Message struct {
+		ID      string          `json:"id"`
+		Role    string          `json:"role"`
+		Content json.RawMessage `json:"content"`
+	} `json:"message"`
+	ParentUUID string `json:"parentUuid"`
 }
 
 // isCommandRecord reports whether transcript user-message content is the
@@ -268,24 +263,21 @@ func isCommandRecord(s string) bool {
 
 // extractSlug reads the first few lines of a session JSONL to find the slug.
 func (c *Claude) extractSlug(path string) string {
-	f, err := os.Open(path)
-	if err != nil {
-		return ""
-	}
-	defer f.Close()
-
-	scanner := newJSONLScanner(f)
-	for i := 0; i < 20 && scanner.Scan(); i++ {
-		var msg struct {
-			Slug string `json:"slug"`
+	n := 0
+	for rec := range jsonlDecode[transcriptRecord](jsonlLines(path)) {
+		if n++; n > slugSearchLines {
+			break
 		}
-		if err := json.Unmarshal(scanner.Bytes(), &msg); err == nil && msg.Slug != "" {
-			return msg.Slug
+		if rec.Slug != "" {
+			return rec.Slug
 		}
 	}
-	warnScanErr(scanner.Err(), path)
 	return ""
 }
+
+// slugSearchLines bounds the slug hunt: Claude Code sets the slug on messages
+// after the first exchange, so it shows up early or not at all.
+const slugSearchLines = 20
 
 func (c *Claude) ResumeCommand(session Session) string {
 	var cmd string
@@ -332,12 +324,6 @@ func transcriptTextFromProjects(claudeDir, sessionID string) string {
 // ClaudeDesktop, and ClaudeCowork providers, which all write/read the same
 // transcript line shape: {"message": {"role": ..., "content": ...}}.
 func extractConversationText(path string) string {
-	f, err := os.Open(path)
-	if err != nil {
-		return ""
-	}
-	defer f.Close()
-
 	// Claude streams assistant messages as multiple JSONL lines with the same
 	// message ID, each with progressively more content. We keep the longest
 	// text for each message ID to get the final version.
@@ -350,21 +336,7 @@ func extractConversationText(path string) string {
 	var order []string // unique message keys in order
 	seq := 0
 
-	scanner := newJSONLScanner(f)
-	for scanner.Scan() {
-		var raw struct {
-			Type    string `json:"type"`
-			Message struct {
-				ID      string          `json:"id"`
-				Role    string          `json:"role"`
-				Content json.RawMessage `json:"content"`
-			} `json:"message"`
-			ParentUUID string `json:"parentUuid"`
-		}
-		if err := json.Unmarshal(scanner.Bytes(), &raw); err != nil {
-			continue
-		}
-
+	for raw := range jsonlDecode[transcriptRecord](jsonlLines(path)) {
 		role := raw.Message.Role
 		if role != "user" && role != "assistant" {
 			continue
@@ -420,7 +392,6 @@ func extractConversationText(path string) string {
 			seq++
 		}
 	}
-	warnScanErr(scanner.Err(), path)
 
 	// Build conversation text in order.
 	var parts []string

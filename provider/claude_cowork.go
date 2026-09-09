@@ -276,16 +276,14 @@ func humanTurns(metaPath, cliID string) int {
 // messages with real text content, excluding tool results and the automated
 // prompts (scheduled-task trigger, system reminders, local-command wrappers).
 func countHumanTurns(path string) int {
-	f, err := os.Open(path)
-	if err != nil {
-		return 0
-	}
-	defer f.Close()
-
 	n := 0
-	scanner := newJSONLScanner(f)
-	for scanner.Scan() {
-		line := scanner.Bytes()
+	// Stays on the line iterator rather than jsonlDecode so the cheap
+	// bytes.Contains stays in front of the unmarshal. Decoding every line
+	// instead measured 2.3x slower over this machine's Cowork corpus (8.8ms ->
+	// 20ms, 3.3K -> 17K allocs): the struct pulls Content out as a RawMessage,
+	// so a decode-everything pass copies the body of every assistant message
+	// and tool result to reach fields only user records have.
+	for line := range jsonlLines(path) {
 		if !bytes.Contains(line, []byte(`"user"`)) {
 			continue
 		}
@@ -316,9 +314,6 @@ func countHumanTurns(path string) int {
 		}
 		n++
 	}
-	// A short read undercounts turns, which reads as a routine run and folds a
-	// session the user actually worked in into a collapsed group.
-	warnScanErr(scanner.Err(), path)
 	return n
 }
 
