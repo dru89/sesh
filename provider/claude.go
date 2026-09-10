@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -15,6 +16,14 @@ import (
 type Claude struct {
 	baseDir       string
 	resumeCommand string // override for resume command template
+
+	// historyText holds each session's typed prompts, joined, as a fallback
+	// for SessionText when the transcript is gone. Populated by ListSessions;
+	// see SessionText for why a session outlives its transcript. Guarded
+	// because ListSessions runs on a provider goroutine and the readers come
+	// later from others.
+	mu          sync.Mutex
+	historyText map[string]string
 }
 
 // ClaudeOption configures the Claude provider.
@@ -102,9 +111,7 @@ func (c *Claude) ListSessions(ctx context.Context) ([]Session, error) {
 				info.firstReal = entry.Display
 				info.firstRealTime = entry.Timestamp
 			}
-			if len(info.prompts) < 5 {
-				info.prompts = append(info.prompts, entry.Display)
-			}
+			info.prompts = append(info.prompts, entry.Display)
 		}
 	}
 
@@ -138,7 +145,9 @@ func (c *Claude) ListSessions(ctx context.Context) ([]Session, error) {
 		}
 
 		searchParts := []string{rawTitle, info.project}
-		searchParts = append(searchParts, info.prompts...)
+		// Search keeps the original few-prompt budget; the full set is held
+		// for SessionText, where more context makes a better summary.
+		searchParts = append(searchParts, info.prompts[:min(searchPromptLimit, len(info.prompts))]...)
 		slug := slugs[id]
 		if slug != "" {
 			searchParts = append(searchParts, slug)
@@ -168,7 +177,37 @@ func (c *Claude) ListSessions(ctx context.Context) ([]Session, error) {
 		return sessions[i].LastUsed.After(sessions[j].LastUsed)
 	})
 
+	c.mu.Lock()
+	if c.historyText == nil {
+		c.historyText = make(map[string]string, len(grouped))
+	}
+	for id, info := range grouped {
+		if len(info.prompts) > 0 {
+			c.historyText[id] = joinUserTurns(info.prompts)
+		}
+	}
+	c.mu.Unlock()
+
 	return sessions, nil
+}
+
+// searchPromptLimit is how many prompts feed the fuzzy-search corpus. Unchanged
+// from before the full set was retained: more text makes matching noisier, and
+// the extra prompts exist for summarization rather than search.
+const searchPromptLimit = 5
+
+// joinUserTurns renders prompts the way extractConversationText and OpenCode's
+// SessionText render theirs, so the summarizer sees one shape regardless of
+// which source the text came from. Every entry here is the user speaking, so
+// only the first carries the label — the same continuation rule OpenCode uses.
+func joinUserTurns(prompts []string) string {
+	if len(prompts) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(prompts))
+	parts = append(parts, "User: "+prompts[0])
+	parts = append(parts, prompts[1:]...)
+	return strings.Join(parts, "\n\n")
 }
 
 // loadSlugs scans project transcript files for the slug field.
@@ -306,7 +345,20 @@ func (c *Claude) ResumeCommand(session Session) string {
 // prompts and assistant responses. Reads the session transcript file and
 // extracts both user and assistant message content.
 func (c *Claude) SessionText(ctx context.Context, sessionID string) string {
-	return transcriptTextFromProjects(c.baseDir, sessionID)
+	if text := transcriptTextFromProjects(c.baseDir, sessionID); text != "" {
+		return text
+	}
+
+	// The transcript is gone but the session is not. Claude Code prunes
+	// ~/.claude/projects while history.jsonl keeps growing, so a session can
+	// outlive its own transcript — on the author's machine that is true of
+	// every claude-code session, all 64 of them, which read back with zero
+	// characters and could therefore never be summarized. The typed prompts
+	// are still in history, and user prompts alone are what the OpenCode
+	// provider has always supplied, so they are enough to work with.
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.historyText[sessionID]
 }
 
 // transcriptTextFromProjects finds <claudeDir>/projects/*/<sessionID>.jsonl and

@@ -381,6 +381,8 @@ Session transcripts live in `~/.claude/projects/<encoded-path>/<sessionId>.jsonl
 
 Command-only sessions are skipped: slash commands (`/login`, `/model`) and shell escapes (`!ls`) are logged to history like prompts, so a session whose entries are all commands is junk — unless it was started with an initial prompt argument (`claude "..."`), which never lands in history. `firstTranscriptPrompt()` checks the transcript for a real user message before dropping such a session, and that message becomes the title. The title is always the earliest *real* prompt (shared predicate: `provider.IsCommandInput()`); transcript command-execution records (`<command-name>`, `<local-command-stdout>`, `isMeta` entries) are excluded from titles and session text by `isCommandRecord()`.
 
+`SessionText` prefers the transcript and falls back to the session's prompts from `history.jsonl`, joined the way `extractConversationText` and OpenCode's reader label theirs. The fallback is not an edge case: Claude Code prunes `~/.claude/projects` while `history.jsonl` keeps growing, so sessions outlive their transcripts — on the author's machine that was true of *every* `claude-code` session (all 64 read back with zero characters, so 24 could never be summarized and `sesh show` displayed no messages for any of them). User prompts alone are exactly what the OpenCode provider has always supplied, so they are enough to summarize from. `ListSessions` now retains every prompt for this, while the fuzzy-search corpus keeps its original `searchPromptLimit` budget — more search text makes matching noisier, and the extra prompts exist for summarization.
+
 Resume: `claude --resume <id>` (binary at `~/.local/bin/claude`)
 
 #### Claude Code Desktop (`claude-code-desktop`)
@@ -451,7 +453,7 @@ Any executable that outputs `[{"id", "title", "created", "last_used", ...}]` to 
 
 Each provider implements `SessionText(ctx, sessionID) string` to supply raw user prompt text for summary generation:
 - **OpenCode:** Queries first 10 user text parts from the SQLite database.
-- **Claude Code:** Reads the session transcript JSONL and extracts user message content strings.
+- **Claude Code:** Reads the session transcript JSONL and extracts user message content strings, falling back to the session's `history.jsonl` prompts when the transcript has been pruned.
 - **Claude Code Desktop:** Same shared `~/.claude/projects` transcript store as the CLI, via the shared `transcriptTextFromProjects()` helper.
 - **Claude Cowork:** Reads the nested Claude Code-format transcript, falling back to `audit.jsonl`, both parsed by the same `extractConversationText` helper as the Claude Code provider.
 - **External:** Returns the `text` field from the list command response (cached in memory from the initial list call).

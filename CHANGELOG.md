@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Stop losing Claude Code CLI sessions whose transcript has been cleaned up. Claude Code prunes `~/.claude/projects` while `history.jsonl` keeps every prompt, so those sessions read back with no text at all — no summary could be generated for them and `sesh show` displayed nothing. They now fall back to the prompts still on disk. On the author's machine that was every `claude-code` session
+
 - Say something when an agent's stored format changes underneath sesh. A renamed or moved field doesn't make JSON decoding fail, it produces an empty record — so every session's text would have gone blank while sesh reported nothing, and the picker would have kept suggesting `sesh index`, which skips textless sessions and reports nothing either. An index run that finds sessions to summarize and can't read any of them now says so on the next run, with a session ID to check. An unreadable `history.jsonl` surfaces as a provider error rather than an empty session list
 
 - No user-visible change: the five hand-rolled JSONL read loops in the Claude providers now share one iterator that owns opening, closing, scan-buffer sizing, and short-read reporting. Verified identical output across all 640 sessions on the author's machine
