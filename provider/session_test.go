@@ -1208,3 +1208,44 @@ func TestExternalSessionText(t *testing.T) {
 		t.Errorf("got %q, want empty", got)
 	}
 }
+
+// A history file with content but no usable entry means the format changed
+// underneath us. It has to be an error: history.jsonl is this provider's whole
+// input, so returning zero sessions and nil looks exactly like a fresh install.
+func TestClaudeListSessionsErrorsOnUnreadableHistory(t *testing.T) {
+	dir := t.TempDir()
+	var lines []string
+	for i := 0; i < 10; i++ {
+		lines = append(lines, fmt.Sprintf(`{"prompt":"do a thing","at":123,"cwd":"/tmp","conversation":"c-%d"}`, i))
+	}
+	writeFile(t, filepath.Join(dir, "history.jsonl"), strings.Join(lines, "\n")+"\n")
+
+	sessions, err := (&Claude{baseDir: dir}).ListSessions(context.Background())
+	if err == nil {
+		t.Fatalf("expected an error, got %d sessions and nil", len(sessions))
+	}
+	if !strings.Contains(err.Error(), "no entry with a sessionId") {
+		t.Errorf("error should name the cause; got %v", err)
+	}
+}
+
+// A fresh install has an empty history and that is not a failure.
+func TestClaudeListSessionsEmptyHistoryIsNotAnError(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "history.jsonl"), "")
+
+	sessions, err := (&Claude{baseDir: dir}).ListSessions(context.Background())
+	if err != nil {
+		t.Errorf("empty history should not error, got %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Errorf("got %d sessions from an empty history", len(sessions))
+	}
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}

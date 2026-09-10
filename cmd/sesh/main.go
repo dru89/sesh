@@ -505,6 +505,17 @@ func main() {
 				fmt.Fprintf(os.Stderr, "sesh:   command: %s\n", strings.Join(c, " "))
 			}
 			fmt.Fprintf(os.Stderr, "sesh:   run 'sesh setup --verify' to re-check your configuration.\n")
+		} else if health.NoUsableText() {
+			// Sessions needed summarizing and not one of them yielded text.
+			// The 'sesh index' hint below would be actively misleading here:
+			// index is the thing that just discovered this and skipped all of
+			// them, so it would send the user in a circle.
+			fmt.Fprintf(os.Stderr, "sesh: %d sessions had no readable text on the last index run.\n", health.NoTextSkips())
+			if id := health.NoTextExample(); id != "" {
+				fmt.Fprintf(os.Stderr, "sesh:   an agent may have changed its transcript format. Check with 'sesh show %s'.\n", id)
+			} else {
+				fmt.Fprintf(os.Stderr, "sesh:   an agent may have changed its transcript format.\n")
+			}
 		} else {
 			// Cache warming hint: many sessions lack summaries but generation
 			// looks healthy, so the user just hasn't run the initial index.
@@ -636,6 +647,7 @@ func runIndex(args []string) {
 	}
 
 	var items []summary.BatchItem
+	var noText string // one session that read back empty, for the hint
 	for _, s := range all {
 		if !needMap[s.ID] {
 			continue
@@ -649,6 +661,9 @@ func runIndex(args []string) {
 			// No session text available — skip rather than summarizing the
 			// bare title, which produces confused LLM output like
 			// "I don't have access to this session."
+			if noText == "" {
+				noText = s.ID
+			}
 			continue
 		}
 		items = append(items, summary.BatchItem{
@@ -703,10 +718,17 @@ func runIndex(args []string) {
 	// a successful index clears a stale failure hint. A run that attempted
 	// nothing is not evidence either way, so skip it entirely rather than
 	// rewriting the record with unchanged state.
-	if len(items) > 0 {
+	// A run that attempted nothing is normally not evidence either way, but one
+	// that skipped everything for want of text is: it means the sessions were
+	// there and nothing could be read out of them.
+	if len(items) > 0 || skipped >= summary.NoTextHintThreshold {
 		health := summary.NewHealth()
-		indexCmd, _ := cfg.indexCommand()
-		health.RecordRun(len(items), succeeded, firstErr, indexCmd)
+		if len(items) == 0 {
+			health.RecordNoUsableText(skipped, noText)
+		} else {
+			indexCmd, _ := cfg.indexCommand()
+			health.RecordRun(len(items), succeeded, firstErr, indexCmd)
+		}
 		if err := health.Save(); err != nil {
 			fmt.Fprintf(os.Stderr, "sesh: warning: failed to save index health: %v\n", err)
 		}
@@ -764,6 +786,10 @@ func lazyIndex(ctx context.Context, cfg summary.Config, cache *summary.Cache, he
 	}
 
 	var items []summary.BatchItem
+	var (
+		skipped int
+		noText  string
+	)
 	for _, s := range sessions {
 		if !needMap[s.ID] {
 			continue
@@ -776,6 +802,10 @@ func lazyIndex(ctx context.Context, cfg summary.Config, cache *summary.Cache, he
 		if text == "" {
 			// No session text available — skip rather than summarizing the
 			// bare title, which produces confused LLM output.
+			skipped++
+			if noText == "" {
+				noText = s.ID
+			}
 			continue
 		}
 		items = append(items, summary.BatchItem{
@@ -783,6 +813,17 @@ func lazyIndex(ctx context.Context, cfg summary.Config, cache *summary.Cache, he
 			LastUsed: s.LastUsed,
 			Text:     text,
 		})
+	}
+
+	// Every candidate read back empty. This goroutine runs under the alt screen
+	// with nowhere to print, so recording it is the only way the user ever
+	// hears about it — a later run reads it back.
+	if len(items) == 0 {
+		if skipped >= summary.NoTextHintThreshold {
+			health.RecordNoUsableText(skipped, noText)
+			_ = health.Save()
+		}
+		return
 	}
 
 	// Record and persist as each result lands, not after the batch: this

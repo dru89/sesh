@@ -51,6 +51,12 @@ type healthState struct {
 	// which of several configured commands is the broken one.
 	LastCommand []string `json:"last_command,omitempty"`
 
+	// NoTextSkips is how many sessions the last generation run had to skip
+	// because their provider returned no text at all, and NoTextExample is one
+	// of their IDs so the hint can point at something concrete.
+	NoTextSkips   int    `json:"no_text_skips,omitempty"`
+	NoTextExample string `json:"no_text_example,omitempty"`
+
 	// Diagnostic only — nothing reads these back. No omitempty: it has no
 	// effect on a struct value like time.Time, so a zero time serializes
 	// either way and the tag would only be misleading.
@@ -77,6 +83,11 @@ func (h *Health) RecordRun(attempted, succeeded int, firstErr error, command []s
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
+
+	// Anything attempted means text was found, so a previously recorded
+	// all-empty run no longer describes the world.
+	h.state.NoTextSkips = 0
+	h.state.NoTextExample = ""
 
 	if succeeded > 0 {
 		// Something worked, so the command is fundamentally sound. Whatever
@@ -235,4 +246,51 @@ func CondenseError(s string) string {
 		s = string(r[:maxRecordedErrorLen-1]) + "…"
 	}
 	return s
+}
+
+// NoTextHintThreshold is how many textless sessions a run must skip before the
+// hint fires. A couple of genuinely empty sessions is ordinary; a whole run
+// finding nothing to read is not.
+const NoTextHintThreshold = 5
+
+// RecordNoUsableText notes a run that attempted nothing because every session
+// it wanted to summarize read back with no text.
+//
+// This exists because RecordRun cannot see it. RecordRun ignores runs with
+// attempted == 0 on purpose — "nothing needed summarizing" is not evidence
+// about anything — but "sessions needed summarizing and every one of them read
+// back empty" is strong evidence, and it lands in that same branch. Without
+// this, a provider whose stored format changed underneath us is indis-
+// tinguishable from an idle index: the reads succeed, return nothing, and the
+// picker goes on advising 'sesh index', which skips them all and says nothing.
+//
+// Deliberately provider-agnostic. The failure it catches is "a source we read
+// stopped giving us text", which is as true of OpenCode's SQLite schema as of
+// Claude's JSONL, and neither provider has to participate.
+func (h *Health) RecordNoUsableText(skipped int, exampleID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.state.NoTextSkips = skipped
+	h.state.NoTextExample = exampleID
+}
+
+// NoUsableText reports whether the last run had sessions to summarize and could
+// not read text for any of them.
+func (h *Health) NoUsableText() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.state.NoTextSkips >= NoTextHintThreshold
+}
+
+// NoTextSkips and NoTextExample return the detail behind NoUsableText.
+func (h *Health) NoTextSkips() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.state.NoTextSkips
+}
+
+func (h *Health) NoTextExample() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.state.NoTextExample
 }
