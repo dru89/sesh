@@ -1249,3 +1249,85 @@ func writeFile(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+// Claude Code prunes ~/.claude/projects while history.jsonl keeps growing, so
+// a session routinely outlives its own transcript. The prompts are still on
+// disk, so the session should not read back as empty.
+func TestClaudeSessionTextFallsBackToHistoryPrompts(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now().UnixMilli()
+	writeFile(t, filepath.Join(dir, "history.jsonl"), strings.Join([]string{
+		fmt.Sprintf(`{"display":"add a retry to the uploader","timestamp":%d,"project":"/p","sessionId":"gone"}`, now),
+		fmt.Sprintf(`{"display":"/model","timestamp":%d,"project":"/p","sessionId":"gone"}`, now+1),
+		fmt.Sprintf(`{"display":"make the backoff exponential","timestamp":%d,"project":"/p","sessionId":"gone"}`, now+2),
+	}, "\n")+"\n")
+	// No projects/ dir at all: the transcript is gone.
+
+	c := &Claude{baseDir: dir}
+	if _, err := c.ListSessions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	text := c.SessionText(context.Background(), "gone")
+	if text == "" {
+		t.Fatal("no fallback text; the session reads back empty and can never be summarized")
+	}
+	if !strings.Contains(text, "add a retry to the uploader") || !strings.Contains(text, "make the backoff exponential") {
+		t.Errorf("fallback lost prompts: %q", text)
+	}
+	if strings.Contains(text, "/model") {
+		t.Errorf("fallback included a slash command: %q", text)
+	}
+	// Same shape the transcript and OpenCode readers produce.
+	if !strings.HasPrefix(text, "User: ") {
+		t.Errorf("fallback is not labelled like other session text: %q", text)
+	}
+}
+
+// A real transcript is richer than the prompts alone — it has the assistant's
+// side — so it has to win when both exist.
+func TestClaudeSessionTextPrefersTranscriptOverHistory(t *testing.T) {
+	dir := createTestClaudeData(t)
+
+	c := &Claude{baseDir: dir}
+	if _, err := c.ListSessions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	text := c.SessionText(context.Background(), "sess-1")
+	if !strings.Contains(text, "Assistant: Sure") {
+		t.Errorf("expected transcript text with the assistant turn, got %q", text)
+	}
+}
+
+// The prompt budget for fuzzy search is unchanged; the extra prompts retained
+// for SessionText must not leak into the search corpus.
+func TestClaudeSearchTextKeepsPromptBudget(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now().UnixMilli()
+	var lines []string
+	for i := 0; i < 10; i++ {
+		lines = append(lines, fmt.Sprintf(`{"display":"prompt number %d","timestamp":%d,"project":"/p","sessionId":"s1"}`, i, now+int64(i)))
+	}
+	writeFile(t, filepath.Join(dir, "history.jsonl"), strings.Join(lines, "\n")+"\n")
+
+	c := &Claude{baseDir: dir}
+	sessions, err := c.ListSessions(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+
+	if !strings.Contains(sessions[0].SearchText, "prompt number 4") {
+		t.Error("search text lost a prompt inside the budget")
+	}
+	if strings.Contains(sessions[0].SearchText, "prompt number 9") {
+		t.Errorf("search text grew past the %d-prompt budget", searchPromptLimit)
+	}
+	// ...but SessionText sees all of them.
+	if !strings.Contains(c.SessionText(context.Background(), "s1"), "prompt number 9") {
+		t.Error("SessionText should carry the full prompt set")
+	}
+}
